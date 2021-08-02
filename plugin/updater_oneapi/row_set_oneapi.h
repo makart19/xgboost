@@ -112,7 +112,7 @@ class PartitionBuilderOneAPI {
   static constexpr size_t subgroupSize = 16;
 
   template<typename Func>
-  void Init(cl::sycl::queue qu, size_t n_nodes, Func funcNTaks) {
+  void Init(sycl::queue qu, size_t n_nodes, Func funcNTaks) {
     qu_ = qu;
     left_right_nodes_sizes_.resize(n_nodes);
     nodes_offsets_.resize(n_nodes+1);
@@ -188,7 +188,7 @@ class PartitionBuilderOneAPI {
 
   USMVector<size_t> prefix_sums_;
 
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
 };
 
 }  // namespace common

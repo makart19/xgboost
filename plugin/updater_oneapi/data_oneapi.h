@@ -13,6 +13,8 @@
 #include "xgboost/logging.h"
 #include "xgboost/host_device_vector.h"
 
+#include "../../src/common/threading_utils.h"
+
 #include "CL/sycl.hpp"
 
 namespace xgboost {
@@ -20,14 +22,14 @@ namespace xgboost {
 template <typename T>
 class USMDeleter {
 public:
-  explicit USMDeleter(cl::sycl::queue qu) : qu_(qu) {}
+  explicit USMDeleter(sycl::queue qu) : qu_(qu) {}
 
   void operator()(T* data) const {
-    cl::sycl::free(data, qu_);    
+    sycl::free(data, qu_);    
   }
 
 private:
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
 };
 
 /* OneAPI implementation of a HostDeviceVector, storing both host and device memory in a single USM buffer.
@@ -39,20 +41,20 @@ class USMVector {
 public:
   USMVector() : size_(0), data_(nullptr) {}
 
-  USMVector(cl::sycl::queue qu) : qu_(qu), size_(0), data_(nullptr) {}
+  USMVector(sycl::queue qu) : qu_(qu), size_(0), data_(nullptr) {}
 
-  USMVector(cl::sycl::queue qu, size_t size) : qu_(qu), size_(size) {
-    data_ = std::shared_ptr<T>(cl::sycl::malloc_shared<T>(size_, qu_), USMDeleter<T>(qu_));
+  USMVector(sycl::queue qu, size_t size) : qu_(qu), size_(size) {
+    data_ = std::shared_ptr<T>(sycl::malloc_shared<T>(size_, qu_), USMDeleter<T>(qu_));
   }
 
-  USMVector(cl::sycl::queue qu, size_t size, T v) : qu_(qu), size_(size) {
-    data_ = std::shared_ptr<T>(cl::sycl::malloc_shared<T>(size_, qu_), USMDeleter<T>(qu_));
+  USMVector(sycl::queue qu, size_t size, T v) : qu_(qu), size_(size) {
+    data_ = std::shared_ptr<T>(sycl::malloc_shared<T>(size_, qu_), USMDeleter<T>(qu_));
     qu_.fill(data_.get(), v, size_).wait();
   }
 
-  USMVector(cl::sycl::queue qu, const std::vector<T> &vec) : qu_(qu) {
+  USMVector(sycl::queue qu, const std::vector<T> &vec) : qu_(qu) {
     size_ = vec.size();
-    data_ = std::shared_ptr<T>(cl::sycl::malloc_shared<T>(size_, qu_), USMDeleter<T>(qu_));
+    data_ = std::shared_ptr<T>(sycl::malloc_shared<T>(size_, qu_), USMDeleter<T>(qu_));
     std::copy(vec.begin (), vec.end (), data_.get());
   }
 
@@ -87,7 +89,7 @@ public:
     size_ = 0;
   }
 
-  void Resize(cl::sycl::queue qu, size_t size_new) {
+  void Resize(sycl::queue qu, size_t size_new) {
     qu_ = qu;
     if (size_new <= size_) {
       size_ = size_new;
@@ -95,14 +97,14 @@ public:
       size_t size_old = size_;
       auto data_old = data_;
       size_ = size_new;
-      data_ = std::shared_ptr<T>(cl::sycl::malloc_shared<T>(size_, qu_), USMDeleter<T>(qu_));
+      data_ = std::shared_ptr<T>(sycl::malloc_shared<T>(size_, qu_), USMDeleter<T>(qu_));
       if (size_old > 0) {
         qu_.memcpy(data_.get(), data_old.get(), sizeof(T) * size_old).wait();
       }
     }
   }
 
-  void Resize(cl::sycl::queue qu, size_t size_new, T v) {
+  void Resize(sycl::queue qu, size_t size_new, T v) {
     qu_ = qu;
     if (size_new <= size_) {
       size_ = size_new;
@@ -110,7 +112,7 @@ public:
       size_t size_old = size_;
       auto data_old = data_;
       size_ = size_new;
-      data_ = std::shared_ptr<T>(cl::sycl::malloc_shared<T>(size_, qu_), USMDeleter<T>(qu_));
+      data_ = std::shared_ptr<T>(sycl::malloc_shared<T>(size_, qu_), USMDeleter<T>(qu_));
       if (size_old > 0) {
         qu_.memcpy(data_.get(), data_old.get(), sizeof(T) * size_old).wait();
       }
@@ -120,17 +122,17 @@ public:
     }
   }
 
-  void Init(cl::sycl::queue qu, const std::vector<T> &vec) {
+  void Init(sycl::queue qu, const std::vector<T> &vec) {
     qu_ = qu;
     size_ = vec.size();
-    data_ = std::shared_ptr<T>(cl::sycl::malloc_shared<T>(size_, qu_), USMDeleter<T>(qu_));
+    data_ = std::shared_ptr<T>(sycl::malloc_shared<T>(size_, qu_), USMDeleter<T>(qu_));
     std::copy(vec.begin(), vec.end(), data_.get());
   }
 
   using value_type = T;  // NOLINT
 
 private:
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
   size_t size_;
   std::shared_ptr<T> data_;
 };
@@ -138,12 +140,12 @@ private:
 /* Wrapper for DMatrix which stores all batches in a single USM buffer */
 struct DeviceMatrixOneAPI {
   DMatrix* p_mat;  // Pointer to the original matrix on the host
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
   USMVector<size_t> row_ptr;
   USMVector<Entry> data;
   size_t total_offset;
 
-  DeviceMatrixOneAPI(cl::sycl::queue qu, DMatrix* dmat) : p_mat(dmat), qu_(qu) {
+  DeviceMatrixOneAPI(sycl::queue qu, DMatrix* dmat) : p_mat(dmat), qu_(qu) {
     size_t num_row = 0;
     size_t num_nonzero = 0;
     for (auto &batch : dmat->GetBatches<SparsePage>()) {

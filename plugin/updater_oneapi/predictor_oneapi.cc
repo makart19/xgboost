@@ -26,10 +26,10 @@ class PredictorOneAPI : public Predictor {
   explicit PredictorOneAPI(GenericParameter const* generic_param) :
       Predictor::Predictor{generic_param} {
     bool is_cpu = false;
-    std::vector<cl::sycl::device> devices = cl::sycl::device::get_devices();
+    std::vector<sycl::device> devices = sycl::device::get_devices();
     for (size_t i = 0; i < devices.size(); i++)
     {
-      LOG(INFO) << "device_id = " << i << ", name = " << devices[i].get_info<cl::sycl::info::device::name>();
+      LOG(INFO) << "device_id = " << i << ", name = " << devices[i].get_info<sycl::info::device::name>();
     }
     if (generic_param->device_id != GenericParameter::kDefaultId) {
     	int n_devices = (int)devices.size();
@@ -157,7 +157,7 @@ struct DeviceNodeOneAPI {
 /* OneAPI implementation of a device model, storing tree structure in USM buffers to provide access from device kernels */
 class DeviceModelOneAPI {
  public:
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
   USMVector<DeviceNodeOneAPI> nodes_;
   USMVector<size_t> tree_segments_;
   USMVector<int> tree_group_;
@@ -169,7 +169,7 @@ class DeviceModelOneAPI {
 
   ~DeviceModelOneAPI() {}
 
-  void Init(cl::sycl::queue qu, const gbm::GBTreeModel& model, size_t tree_begin, size_t tree_end) {
+  void Init(sycl::queue qu, const gbm::GBTreeModel& model, size_t tree_begin, size_t tree_end) {
     qu_ = qu;
     CHECK_EQ(model.param.size_leaf_vector, 0);
 
@@ -246,7 +246,7 @@ float GetLeafWeight(int ridx, const DeviceNodeOneAPI* tree, Entry* data, size_t*
   return n.GetWeight();
 }
 
-void DevicePredictInternal(cl::sycl::queue qu,
+void DevicePredictInternal(sycl::queue qu,
                            DeviceMatrixOneAPI* dmat,
                            HostDeviceVector<float>* out_preds,
                            const gbm::GBTreeModel& model,
@@ -261,7 +261,7 @@ void DevicePredictInternal(cl::sycl::queue qu,
   auto& out_preds_vec = out_preds->HostVector();
 
   DeviceNodeOneAPI* nodes = device_model.nodes_.Data();
-  cl::sycl::buffer<float, 1> out_preds_buf(out_preds_vec.data(), out_preds_vec.size());
+  sycl::buffer<float, 1> out_preds_buf(out_preds_vec.data(), out_preds_vec.size());
   size_t* tree_segments = device_model.tree_segments_.Data();
   int* tree_group = device_model.tree_group_.Data();
   size_t* row_ptr = dmat->row_ptr.Data();
@@ -270,9 +270,9 @@ void DevicePredictInternal(cl::sycl::queue qu,
   int num_rows = dmat->row_ptr.Size() - 1;
   int num_group = model.learner_model_param->num_output_group;
 
-  qu.submit([&](cl::sycl::handler& cgh) {
-    auto out_predictions = out_preds_buf.template get_access<cl::sycl::access::mode::read_write>(cgh);
-    cgh.parallel_for<class PredictInternal>(cl::sycl::range<1>(num_rows), [=](cl::sycl::id<1> pid) {
+  qu.submit([&](sycl::handler& cgh) {
+    auto out_predictions = out_preds_buf.template get_access<sycl::access::mode::read_write>(cgh);
+    cgh.parallel_for<class PredictInternal>(sycl::range<1>(num_rows), [=](sycl::id<1> pid) {
       int global_idx = pid[0];
       if (global_idx >= num_rows) return;
       if (num_group == 1) {
@@ -330,12 +330,12 @@ class GPUPredictorOneAPI : public Predictor {
  public:
   explicit GPUPredictorOneAPI(GenericParameter const* generic_param) :
       Predictor::Predictor{generic_param}, cpu_predictor(Predictor::Create("cpu_predictor", generic_param)) {
-    std::vector<cl::sycl::device> devices = cl::sycl::device::get_devices();
+    std::vector<sycl::device> devices = sycl::device::get_devices();
     if (generic_param->device_id != GenericParameter::kDefaultId) {
-      qu_ = cl::sycl::queue(devices[generic_param->device_id]);
+      qu_ = sycl::queue(devices[generic_param->device_id]);
     } else {	
-      cl::sycl::default_selector selector;
-      qu_ = cl::sycl::queue(selector);
+      sycl::default_selector selector;
+      qu_ = sycl::queue(selector);
     }
   }
 
@@ -399,7 +399,7 @@ class GPUPredictorOneAPI : public Predictor {
   }
 
  private:
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
 
   std::unique_ptr<Predictor> cpu_predictor;
   std::unordered_map<DMatrix*, std::unique_ptr<DeviceMatrixOneAPI>> device_matrix_cache_;

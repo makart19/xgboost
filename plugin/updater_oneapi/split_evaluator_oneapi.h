@@ -39,11 +39,11 @@ class TreeEvaluatorOneAPI {
   USMVector<float> upper_bounds_;
   USMVector<int32_t> monotone_;
   TrainParamOneAPI param_;
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
   bool has_constraint_;
 
  public:
-  TreeEvaluatorOneAPI(cl::sycl::queue qu, TrainParam const& p, bst_feature_t n_features) {
+  TreeEvaluatorOneAPI(sycl::queue qu, TrainParam const& p, bst_feature_t n_features) {
     qu_ = qu;
     if (p.monotone_constraints.empty()) {
       monotone_.Resize(qu_, n_features, 0);
@@ -67,8 +67,8 @@ class TreeEvaluatorOneAPI {
 
     float CalcSplitGain(bst_node_t nidx,
                         bst_feature_t fidx,
-                        tree::GradStats left,
-                        tree::GradStats right) const {
+                        const tree::GradStats& left,
+                        const tree::GradStats& right) const {
       int constraint = constraints[fidx];
       const float negative_infinity = -std::numeric_limits<float>::infinity();
       float wleft = this->CalcWeight(nidx, left);
@@ -101,12 +101,12 @@ class TreeEvaluatorOneAPI {
       }
       float dw = -this->ThresholdL1OneAPI(sum_grad, param.reg_alpha) / (sum_hess + param.reg_lambda);
       if (param.max_delta_step != 0.0f && std::abs(dw) > param.max_delta_step) {
-        dw = cl::sycl::copysign((float)param.max_delta_step, dw);
+        dw = sycl::copysign((float)param.max_delta_step, dw);
       }         
       return dw;
     }
     
-    inline float CalcWeight(bst_node_t nodeid, tree::GradStats stats) const {
+    inline float CalcWeight(bst_node_t nodeid, const tree::GradStats& stats) const {
       float w = this->CalcWeightOneAPI(stats.GetGrad(), stats.GetHess());
       if (!has_constraint) {
         return w;
@@ -129,7 +129,7 @@ class TreeEvaluatorOneAPI {
       return -(2.0f * sum_grad * w + (sum_hess + param.reg_lambda) * this->Sqr(w));
     }
     
-    inline float CalcGainGivenWeight(bst_node_t nid, tree::GradStats stats, float w) const {
+    inline float CalcGainGivenWeight(bst_node_t nid, const tree::GradStats& stats, float w) const {
       if (stats.GetHess() <= 0) {
         return .0f;
       }
@@ -141,7 +141,7 @@ class TreeEvaluatorOneAPI {
       return this->CalcGainGivenWeight(stats.sum_grad, stats.sum_hess, w);
     }
 
-    float CalcGain(bst_node_t nid, tree::GradStats stats) const {
+    float CalcGain(bst_node_t nid, const tree::GradStats& stats) const {
       return this->CalcGainGivenWeight(nid, stats, this->CalcWeight(nid, stats));
     }
   };
@@ -164,8 +164,8 @@ class TreeEvaluatorOneAPI {
     float* lower = lower_bounds_.Data();
     float* upper = upper_bounds_.Data();
     int* monotone = monotone_.Data();
-    qu_.submit([&](cl::sycl::handler& cgh) {
-      cgh.parallel_for<>(cl::sycl::range<1>(1), [=](cl::sycl::item<1> pid) {
+    qu_.submit([&](sycl::handler& cgh) {
+      cgh.parallel_for<>(sycl::range<1>(1), [=](sycl::item<1> pid) {
         lower[leftid] = lower[nodeid];
         upper[leftid] = upper[nodeid];
 

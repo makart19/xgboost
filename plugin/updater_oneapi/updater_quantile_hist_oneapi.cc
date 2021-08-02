@@ -23,10 +23,10 @@ void QuantileHistMakerOneAPI::Configure(const Args& args) {
   param.UpdateAllowUnknown(args);
 
   bool is_cpu = false;
-  std::vector<cl::sycl::device> devices = cl::sycl::device::get_devices();
+  std::vector<sycl::device> devices = sycl::device::get_devices();
   for (size_t i = 0; i < devices.size(); i++)
   {
-    LOG(INFO) << "device_id = " << i << ", name = " << devices[i].get_info<cl::sycl::info::device::name>();
+    LOG(INFO) << "device_id = " << i << ", name = " << devices[i].get_info<sycl::info::device::name>();
   }
   if (param.device_id != GenericParameter::kDefaultId) {
     int n_devices = (int)devices.size();
@@ -63,13 +63,13 @@ void GPUQuantileHistMakerOneAPI::Configure(const Args& args) {
   GenericParameter param;
   param.UpdateAllowUnknown(args);
 
-  std::vector<cl::sycl::device> devices = cl::sycl::device::get_devices();
+  std::vector<sycl::device> devices = sycl::device::get_devices();
 
   if (param.device_id != GenericParameter::kDefaultId) {
-    qu_ = cl::sycl::queue(devices[param.device_id]);
+    qu_ = sycl::queue(devices[param.device_id]);
   } else {
-    cl::sycl::default_selector selector;
-    qu_ = cl::sycl::queue(selector);
+    sycl::default_selector selector;
+    qu_ = sycl::queue(selector);
   }
 
   // initialize pruner
@@ -104,7 +104,7 @@ void GPUQuantileHistMakerOneAPI::CallBuilderUpdate(const std::unique_ptr<Builder
                                                    DMatrix *dmat,
                                                    const std::vector<RegTree *> &trees) {
   for (auto tree : trees) {
-    builder->Update(gmat_, column_matrix_, gpair, dmat, tree);
+    builder->Update(gmat_, gpair, dmat, tree);
   }
 }
 void GPUQuantileHistMakerOneAPI::Update(HostDeviceVector<GradientPair> *gpair,
@@ -114,7 +114,6 @@ void GPUQuantileHistMakerOneAPI::Update(HostDeviceVector<GradientPair> *gpair,
     updater_monitor_.Start("GmatInitialization");
     DeviceMatrixOneAPI dmat_device(qu_, dmat);
     gmat_.Init(qu_, dmat_device, static_cast<uint32_t>(param_.max_bin));
-    column_matrix_.Init(qu_, gmat_, dmat_device, param_.sparse_threshold);
     updater_monitor_.Stop("GmatInitialization");
     is_gmat_initialized_ = true;
   }
@@ -422,7 +421,6 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::AddSplitsToTree(
 template<typename GradientSumT>
 void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::EvaluateAndApplySplits(
     const GHistIndexMatrixOneAPI &gmat,
-    const ColumnMatrixOneAPI &column_matrix,
     RegTree *p_tree,
     int *num_leaves,
     int depth,
@@ -433,7 +431,7 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::EvaluateAndApplySplits(
   std::vector<ExpandEntry> nodes_for_apply_split;
   AddSplitsToTree(gmat, p_tree, num_leaves, depth, timestamp,
                   &nodes_for_apply_split, temp_qexpand_depth);
-  ApplySplit(nodes_for_apply_split, gmat, column_matrix, hist_, p_tree);
+  ApplySplit(nodes_for_apply_split, gmat, hist_, p_tree);
 }
 
 // Split nodes to 2 sets depending on amount of rows in each node
@@ -475,7 +473,6 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::SplitSiblings(
 template<typename GradientSumT>
 void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::ExpandWithDepthWise(
     const GHistIndexMatrixOneAPI &gmat,
-    const ColumnMatrixOneAPI &column_matrix,
     DMatrix *p_fmat,
     RegTree *p_tree,
     const std::vector<GradientPair> &gpair_h,
@@ -497,7 +494,7 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::ExpandWithDepthWise(
     hist_synchronizer_->SyncHistograms(this, sync_ids, p_tree);
     BuildNodeStats(gmat, p_fmat, p_tree, gpair_h, gpair_device);
 
-    EvaluateAndApplySplits(gmat, column_matrix, p_tree, &num_leaves, depth, &timestamp,
+    EvaluateAndApplySplits(gmat, p_tree, &num_leaves, depth, &timestamp,
                    &temp_qexpand_depth);
 
     // clean up
@@ -516,7 +513,6 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::ExpandWithDepthWise(
 template<typename GradientSumT>
 void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::ExpandWithLossGuide(
     const GHistIndexMatrixOneAPI& gmat,
-    const ColumnMatrixOneAPI& column_matrix,
     DMatrix* p_fmat,
     RegTree* p_tree,
     const std::vector<GradientPair>& gpair_h,
@@ -555,7 +551,7 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::ExpandWithLossGuide(
                          right_leaf_weight, e.best.loss_chg, e.stats.GetHess(),
                          e.best.left_sum.GetHess(), e.best.right_sum.GetHess());
 
-      this->ApplySplit({candidate}, gmat, column_matrix, hist_, p_tree);
+      this->ApplySplit({candidate}, gmat, hist_, p_tree);
 
       const int cleft = (*p_tree)[nid].LeftChild();
       const int cright = (*p_tree)[nid].RightChild();
@@ -594,7 +590,6 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::ExpandWithLossGuide(
 template <typename GradientSumT>
 void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::Update(
     const GHistIndexMatrixOneAPI &gmat,
-    const ColumnMatrixOneAPI &column_matrix,
     HostDeviceVector<GradientPair> *gpair,
     DMatrix *p_fmat,
     RegTree *p_tree) {
@@ -609,9 +604,9 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::Update(
 
   this->InitData(gmat, gpair_h, gpair_device, *p_fmat, *p_tree);
   if (param_.grow_policy == TrainParam::kLossGuide) {
-    ExpandWithLossGuide(gmat, column_matrix, p_fmat, p_tree, gpair_h, gpair_device);
+    ExpandWithLossGuide(gmat, p_fmat, p_tree, gpair_h, gpair_device);
   } else {
-    ExpandWithDepthWise(gmat, column_matrix, p_fmat, p_tree, gpair_h, gpair_device);
+    ExpandWithDepthWise(gmat, p_fmat, p_tree, gpair_h, gpair_device);
   }
 
   for (int nid = 0; nid < p_tree->param.num_nodes; ++nid) {
@@ -636,7 +631,7 @@ bool GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::UpdatePredictionCache(
   builder_monitor_.Start("UpdatePredictionCache");
 
   std::vector<bst_float>& out_preds = p_out_preds->HostVector();
-  cl::sycl::buffer<float, 1> out_preds_buf(out_preds.data(), out_preds.size());
+  sycl::buffer<float, 1> out_preds_buf(out_preds.data(), out_preds.size());
 
   CHECK_GT(out_preds.size(), 0U);
 
@@ -659,9 +654,9 @@ bool GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::UpdatePredictionCache(
       const size_t* rid = rowset.begin;
       const size_t num_rows = rowset.Size();
 
-      qu_.submit([&](cl::sycl::handler& cgh) {
-        auto out_predictions = out_preds_buf.template get_access<cl::sycl::access::mode::read_write>(cgh);
-        cgh.parallel_for<class PredictInternal>(cl::sycl::range<1>(num_rows), [=](cl::sycl::item<1> pid) {
+      qu_.submit([&](sycl::handler& cgh) {
+        auto out_predictions = out_preds_buf.template get_access<sycl::access::mode::read_write>(cgh);
+        cgh.parallel_for<class PredictInternal>(sycl::range<1>(num_rows), [=](sycl::item<1> pid) {
           out_predictions[rid[pid.get_id(0)]] += leaf_value;
         });
       }).wait();
@@ -909,7 +904,6 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::EvaluateSplits(
   builder_monitor_.Start("EvaluateSplits");
 
   const size_t n_nodes_in_set = nodes_set.size();
-  const size_t nthread = std::max(1, this->nthread_);
 
   using FeatureSetType = std::shared_ptr<HostDeviceVector<bst_feature_t>>;
   std::vector<FeatureSetType> features_sets(n_nodes_in_set);
@@ -927,9 +921,12 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::EvaluateSplits(
     }
   }
 
+  split_queries_device_.Clear();
   split_queries_device_.Resize(qu_, total_features);
 
   size_t pos = 0;
+
+  const size_t local_size = 16;
 
   for (size_t nid_in_set = 0; nid_in_set < n_nodes_in_set; ++nid_in_set) {
     const size_t nid = nodes_set[nid_in_set].nid;
@@ -955,20 +952,18 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::EvaluateSplits(
 
   TrainParamOneAPI param(param_);
 
-  qu_.submit([&](cl::sycl::handler& cgh) {
-    cgh.parallel_for<>(cl::sycl::range<1>(total_features), [=](cl::sycl::item<1> pid) {
+  qu_.submit([&](sycl::handler& cgh) {
+    cgh.parallel_for<>(sycl::nd_range<2>(sycl::range<2>(total_features, local_size),
+                                         sycl::range<2>(1, local_size)), [=](sycl::nd_item<2> pid) [[intel::reqd_sub_group_size(16)]] {
       TrainParamOneAPI param_device(param);
       TreeEvaluatorOneAPI::SplitEvaluator evaluator_device = evaluator;
-      int i = pid.get_id(0);
+      int i = pid.get_global_id(0);
+      sycl::ONEAPI::sub_group sg = pid.get_sub_group();
       int nid = split_queries_device[i].nid;
       int fid = split_queries_device[i].fid;
       const GradientPairT* hist_data = split_queries_device[i].hist;
-      auto grad_stats = EnumerateSplit<+1>(cut_ptr, cut_val, cut_minval, hist_data, snode[nid],
+      auto grad_stats = EnumerateSplit(sg, cut_ptr, cut_val, hist_data, snode[nid],
               split_queries_device[i].best, fid, nid, evaluator_device, param_device);
-      if (SplitContainsMissingValues(grad_stats, snode[nid])) {
-        EnumerateSplit<-1>(cut_ptr, cut_val, cut_minval, hist_data, snode[nid],
-              split_queries_device[i].best, fid, nid, evaluator_device, param_device);
-      }
     });
   }).wait();
 
@@ -1045,41 +1040,127 @@ GradStats GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::EnumerateSplit(
   return e;
 }
 
+// Enumerate the split values of specific feature.
+// Returns the sum of gradients corresponding to the data points that contains a non-missing value
+// for the particular feature fid.
+template <typename GradientSumT>
+GradStats GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::EnumerateSplit(
+	sycl::ONEAPI::sub_group& sg,
+    const uint32_t* cut_ptr,
+    const bst_float* cut_val,
+    const GradientPairT* hist_data,
+    const NodeEntry& snode,
+    SplitEntryOneAPI& p_best,
+    bst_uint fid,
+    bst_uint nodeID,
+    TreeEvaluatorOneAPI::SplitEvaluator const &evaluator_device,
+    const TrainParamOneAPI& param) {
+  SplitEntryOneAPI best;
+
+  int32_t ibegin = static_cast<int32_t>(cut_ptr[fid]);
+  int32_t iend = static_cast<int32_t>(cut_ptr[fid + 1]);
+
+  double tot_grad = snode.stats.GetGrad();
+  double tot_hess = snode.stats.GetHess();
+
+  double sum_grad = 0.0f;
+  double sum_hess = 0.0f;
+
+  int32_t local_size = sg.get_local_range().size();
+
+  for (int32_t i = ibegin + sg.get_local_id(); i < iend; i += local_size) {
+    double e_grad = sum_grad + sycl::ONEAPI::inclusive_scan(sg, hist_data[i].GetGrad(), std::plus<>());
+    double e_hess = sum_hess + sycl::ONEAPI::inclusive_scan(sg, hist_data[i].GetHess(), std::plus<>());
+    if (e_hess >= param.min_child_weight) {
+      double c_grad = tot_grad - e_grad;
+      double c_hess = tot_hess - e_hess;
+      if (c_hess >= param.min_child_weight) {
+        GradStats e(e_grad, e_hess);
+        GradStats c(c_grad, c_hess);
+        bst_float loss_chg;
+        bst_float split_pt;
+        loss_chg = static_cast<bst_float>(
+            evaluator_device.CalcSplitGain(nodeID, fid, e, c) - snode.root_gain);
+        split_pt = cut_val[i];
+        best.Update(loss_chg, fid, split_pt, false, e, c);
+      }
+    }
+    sum_grad += sycl::ONEAPI::reduce(sg, hist_data[i].GetGrad(), std::plus<>());
+    sum_hess += sycl::ONEAPI::reduce(sg, hist_data[i].GetHess(), std::plus<>());
+  }
+
+  bst_float total_loss_chg = sycl::ONEAPI::reduce(sg, best.loss_chg, sycl::ONEAPI::maximum<>());
+  bst_feature_t total_split_index = sycl::ONEAPI::reduce(sg, best.loss_chg == total_loss_chg ? best.SplitIndex() : (1U << 31) - 1U, sycl::ONEAPI::minimum<>());
+  if (best.loss_chg == total_loss_chg && best.SplitIndex() == total_split_index) p_best.Update(best);
+  return GradStats(sum_grad, sum_hess);
+}
+
 // split row indexes (rid_span) to 2 parts (both stored in rid_buf) depending
 // on comparison of indexes values (idx_span) and split point (split_cond)
 // Handle dense columns
-template <bool default_left, bool any_missing, size_t subgroup_size, typename BinIdxType>
-inline void PartitionDenseKernel(cl::sycl::queue& qu,
+template <bool default_left, typename BinIdxType>
+inline void PartitionDenseKernel(sycl::queue& qu,
                                  const size_t node_in_set,
-                                 const common::DenseColumnOneAPI<BinIdxType>& column,
+                                 const GHistIndexMatrixOneAPI& gmat,
                                  common::Span<const size_t>& rid_span,
+                                 const size_t fid,
                                  const int32_t split_cond,
                                  common::Span<size_t>& rid_buf,
-                                 common::Span<size_t>& prefix_sums,
-                                 cl::sycl::buffer<size_t, 1>& parts_size, 
-                                 size_t local_size) {
-  const int32_t offset = column.GetBaseIdx();
-  const BinIdxType* idx = column.GetFeatureBinIdxPtr().data();
+                                 sycl::buffer<size_t, 1>& parts_size) {
+  const size_t row_stride = gmat.row_stride;
+  const BinIdxType* gradient_index = gmat.index.data<BinIdxType>();
   const size_t* rid = &rid_span[0];
   const size_t range_size = rid_span.size();
-  size_t n_sums = range_size / local_size + !!(range_size % local_size);
-  size_t* prefix_sums_data = &prefix_sums[0];
-
-  /* flags for missing values in dense columns */
-  bool* missing_flags = column.GetMissingFlags();
-  size_t feature_offset = column.GetFeatureOffset();
+  const size_t offset = gmat.cut.Ptrs()[fid];
 
   size_t* p_rid_buf = rid_buf.data();
 
-  qu.submit([&](cl::sycl::handler& cgh) {
-    auto parts_size_acc = parts_size.template get_access<cl::sycl::access::mode::atomic>(cgh);
-    cgh.parallel_for<>(cl::sycl::range<1>(range_size), [=](cl::sycl::item<1> nid) {
+  qu.submit([&](sycl::handler& cgh) {
+    auto parts_size_acc = parts_size.template get_access<sycl::access::mode::atomic>(cgh);
+    cgh.parallel_for<>(sycl::range<1>(range_size), [=](sycl::item<1> nid) {
       const size_t id = rid[nid.get_id(0)];
-      const bool is_left = (any_missing && missing_flags && missing_flags[feature_offset + id]) ? default_left : (static_cast<int32_t>(idx[id]) + offset) <= split_cond;
+      const int32_t value = static_cast<int32_t>(gradient_index[id * row_stride + fid] + offset);
+      const bool is_left = value <= split_cond;
       if (is_left) {
-        p_rid_buf[cl::sycl::atomic_fetch_add<size_t>(parts_size_acc[node_in_set * 2], 1)] = id;
+        p_rid_buf[sycl::atomic_fetch_add<size_t>(parts_size_acc[node_in_set * 2], 1)] = id;
       } else {
-        p_rid_buf[range_size - cl::sycl::atomic_fetch_add<size_t>(parts_size_acc[node_in_set * 2 + 1], 1) - 1] = id;
+        p_rid_buf[range_size - sycl::atomic_fetch_add<size_t>(parts_size_acc[node_in_set * 2 + 1], 1) - 1] = id;
+      }
+    });
+  }).wait();
+}
+
+// split row indexes (rid_span) to 2 parts (both stored in rid_buf) depending
+// on comparison of indexes values (idx_span) and split point (split_cond)
+// Handle dense columns
+template <bool default_left, typename BinIdxType>
+inline void PartitionSparseKernel(sycl::queue& qu,
+                                  const size_t node_in_set,
+                                  const GHistIndexMatrixOneAPI& gmat,
+                                  common::Span<const size_t>& rid_span,
+                                  const size_t fid,
+                                  const int32_t split_cond,
+                                  common::Span<size_t>& rid_buf,
+                                  sycl::buffer<size_t, 1>& parts_size) {
+  const size_t row_stride = gmat.row_stride;
+  const BinIdxType* gradient_index = gmat.index.data<BinIdxType>();
+  const size_t* rid = &rid_span[0];
+  const size_t range_size = rid_span.size();
+  const uint32_t* cut_ptrs = gmat.cut_device.Ptrs().DataConst();
+  const bst_float* cut_vals = gmat.cut_device.Values().DataConst();
+
+  size_t* p_rid_buf = rid_buf.data();
+  qu.submit([&](sycl::handler& cgh) {
+    auto parts_size_acc = parts_size.template get_access<sycl::access::mode::atomic>(cgh);
+    cgh.parallel_for<>(sycl::range<1>(range_size), [=](sycl::item<1> nid) {
+      const size_t id = rid[nid.get_id(0)];
+      const BinIdxType* gr_index_local = gradient_index + row_stride * id;
+      const int32_t fid_local = std::lower_bound(gr_index_local, gr_index_local + row_stride, cut_ptrs[fid]) - gr_index_local;
+      const bool is_left = (fid_local >= row_stride || gr_index_local[fid_local] >= cut_ptrs[fid + 1]) ? default_left : gr_index_local[fid_local] <= split_cond;
+      if (is_left) {
+        p_rid_buf[sycl::atomic_fetch_add<size_t>(parts_size_acc[node_in_set * 2], 1)] = id;
+      } else {
+        p_rid_buf[range_size - sycl::atomic_fetch_add<size_t>(parts_size_acc[node_in_set * 2 + 1], 1) - 1] = id;
       }
     });
   }).wait();
@@ -1092,41 +1173,28 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::PartitionKernel(
     const size_t nid,
     common::Range1d range,
     const int32_t split_cond,
-    const ColumnMatrixOneAPI& column_matrix,
+    const GHistIndexMatrixOneAPI& gmat,
     const RegTree& tree,
-    cl::sycl::buffer<size_t, 1>& parts_size) {
+    sycl::buffer<size_t, 1>& parts_size) {
   const size_t* rid = row_set_collection_[nid].begin;
 
   common::Span<const size_t> rid_span(rid + range.begin(), rid + range.end());
   common::Span<size_t> rid_buf = partition_builder_.GetData(node_in_set);
-  common::Span<size_t> prefix_sums = partition_builder_.GetPrefixSums();
-  const size_t local_size = partition_builder_.GetLocalSize(range);
   const bst_uint fid = tree[nid].SplitIndex();
   const bool default_left = tree[nid].DefaultLeft();
-  const auto column_ptr = column_matrix.GetColumn<BinIdxType>(fid);
 
-  if (column_ptr->GetType() == xgboost::common::kDenseColumn) {
-    const common::DenseColumnOneAPI<BinIdxType>& column =
-          static_cast<const common::DenseColumnOneAPI<BinIdxType>& >(*(column_ptr.get()));
+  if (gmat.IsDense()) {
     if (default_left) {
-      if (column_matrix.AnyMissing()) {
-        PartitionDenseKernel<true, true, common::PartitionBuilderOneAPI::subgroupSize>(qu_, node_in_set, column, rid_span, split_cond,
-                                                                                       rid_buf, prefix_sums, parts_size, local_size);
-      } else {
-        PartitionDenseKernel<true, false, common::PartitionBuilderOneAPI::subgroupSize>(qu_, node_in_set, column, rid_span, split_cond,
-                                                                                        rid_buf, prefix_sums, parts_size, local_size);
-      }
+      PartitionDenseKernel<true, BinIdxType>(qu_, node_in_set, gmat, rid_span, fid, split_cond, rid_buf, parts_size);
     } else {
-      if (column_matrix.AnyMissing()) {
-        PartitionDenseKernel<false, true, common::PartitionBuilderOneAPI::subgroupSize>(qu_, node_in_set, column, rid_span, split_cond,
-                                                                                        rid_buf, prefix_sums, parts_size, local_size);
-      } else {
-        PartitionDenseKernel<false, false, common::PartitionBuilderOneAPI::subgroupSize>(qu_, node_in_set, column, rid_span, split_cond,
-                                                                                         rid_buf, prefix_sums, parts_size, local_size);
-      }
+      PartitionDenseKernel<false, BinIdxType>(qu_, node_in_set, gmat, rid_span, fid, split_cond, rid_buf, parts_size);
     }
   } else {
-    LOG(WARNING) << "Sparse data is currently unsupported for updater_quantile_hist_oneapi";
+    if (default_left) {
+      PartitionSparseKernel<true, BinIdxType>(qu_, node_in_set, gmat, rid_span, fid, split_cond, rid_buf, parts_size);
+    } else {
+      PartitionSparseKernel<false, BinIdxType>(qu_, node_in_set, gmat, rid_span, fid, split_cond, rid_buf, parts_size);
+    }
   }
 }
 
@@ -1175,7 +1243,6 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::AddSplitsToRowSet(const 
 template <typename GradientSumT>
 void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::ApplySplit(const std::vector<ExpandEntry> nodes,
                                                                    const GHistIndexMatrixOneAPI& gmat,
-                                                                   const ColumnMatrixOneAPI& column_matrix,
                                                                    const HistCollectionOneAPI<GradientSumT>& hist,
                                                                    RegTree* p_tree) {
   builder_monitor_.Start("ApplySplit");
@@ -1189,9 +1256,9 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::ApplySplit(const std::ve
     return row_set_collection_[nid].Size();
   });
 
-  cl::sycl::buffer<size_t, 1> parts_size(n_nodes * 2);
+  sycl::buffer<size_t, 1> parts_size(n_nodes * 2);
   {
-    auto parts_size_acc = parts_size.template get_access<cl::sycl::access::mode::write>();
+    auto parts_size_acc = parts_size.template get_access<sycl::access::mode::write>();
     for (size_t node_in_set = 0; node_in_set < n_nodes; node_in_set++) {
       parts_size_acc[node_in_set * 2] = 0;
       parts_size_acc[node_in_set * 2 + 1] = 0;
@@ -1200,18 +1267,18 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::ApplySplit(const std::ve
   for (size_t node_in_set = 0; node_in_set < n_nodes; node_in_set++) {
     const int32_t nid = nodes[node_in_set].nid;
     if (row_set_collection_[nid].Size() > 0) {
-      switch (column_matrix.GetTypeSize()) {
+      switch (gmat.index.GetBinTypeSize()) {
         case common::kUint8BinsTypeSize:
           PartitionKernel<uint8_t>(node_in_set, nid, common::Range1d(0, row_set_collection_[nid].Size()),
-                    split_conditions[node_in_set], column_matrix, *p_tree, parts_size);
+                    split_conditions[node_in_set], gmat, *p_tree, parts_size);
           break;
         case common::kUint16BinsTypeSize:
           PartitionKernel<uint16_t>(node_in_set, nid, common::Range1d(0, row_set_collection_[nid].Size()),
-                    split_conditions[node_in_set], column_matrix, *p_tree, parts_size);
+                    split_conditions[node_in_set], gmat, *p_tree, parts_size);
           break;
         case common::kUint32BinsTypeSize:
           PartitionKernel<uint32_t>(node_in_set, nid, common::Range1d(0, row_set_collection_[nid].Size()),
-                    split_conditions[node_in_set], column_matrix, *p_tree, parts_size);
+                    split_conditions[node_in_set], gmat, *p_tree, parts_size);
           break;
         default:
           CHECK(false);  // no default behavior
@@ -1220,7 +1287,7 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::ApplySplit(const std::ve
   }
 
   {
-    auto parts_size_acc = parts_size.template get_access<cl::sycl::access::mode::write>();
+    auto parts_size_acc = parts_size.template get_access<sycl::access::mode::write>();
     for (size_t node_in_set = 0; node_in_set < n_nodes; node_in_set++) {
       partition_builder_.SetNLeftElems(node_in_set, parts_size_acc[node_in_set * 2]);
       partition_builder_.SetNRightElems(node_in_set, parts_size_acc[node_in_set * 2 + 1]);
@@ -1300,22 +1367,22 @@ template struct GPUQuantileHistMakerOneAPI::Builder<float>;
 template struct GPUQuantileHistMakerOneAPI::Builder<double>;
 template void GPUQuantileHistMakerOneAPI::Builder<float>::PartitionKernel<uint8_t>(
     const size_t node_in_set, const size_t nid, common::Range1d range,
-    const int32_t split_cond, const ColumnMatrixOneAPI& column_matrix, const RegTree& tree, cl::sycl::buffer<size_t, 1>& parts_size);
+    const int32_t split_cond, const GHistIndexMatrixOneAPI &gmat, const RegTree& tree, sycl::buffer<size_t, 1>& parts_size);
 template void GPUQuantileHistMakerOneAPI::Builder<float>::PartitionKernel<uint16_t>(
     const size_t node_in_set, const size_t nid, common::Range1d range,
-    const int32_t split_cond, const ColumnMatrixOneAPI& column_matrix, const RegTree& tree, cl::sycl::buffer<size_t, 1>& parts_size);
+    const int32_t split_cond, const GHistIndexMatrixOneAPI &gmat, const RegTree& tree, sycl::buffer<size_t, 1>& parts_size);
 template void GPUQuantileHistMakerOneAPI::Builder<float>::PartitionKernel<uint32_t>(
     const size_t node_in_set, const size_t nid, common::Range1d range,
-    const int32_t split_cond, const ColumnMatrixOneAPI& column_matrix, const RegTree& tree, cl::sycl::buffer<size_t, 1>& parts_size);
+    const int32_t split_cond, const GHistIndexMatrixOneAPI &gmat, const RegTree& tree, sycl::buffer<size_t, 1>& parts_size);
 template void GPUQuantileHistMakerOneAPI::Builder<double>::PartitionKernel<uint8_t>(
     const size_t node_in_set, const size_t nid, common::Range1d range,
-    const int32_t split_cond, const ColumnMatrixOneAPI& column_matrix, const RegTree& tree, cl::sycl::buffer<size_t, 1>& parts_size);
+    const int32_t split_cond, const GHistIndexMatrixOneAPI &gmat, const RegTree& tree, sycl::buffer<size_t, 1>& parts_size);
 template void GPUQuantileHistMakerOneAPI::Builder<double>::PartitionKernel<uint16_t>(
     const size_t node_in_set, const size_t nid, common::Range1d range,
-    const int32_t split_cond, const ColumnMatrixOneAPI& column_matrix, const RegTree& tree, cl::sycl::buffer<size_t, 1>& parts_size);
+    const int32_t split_cond, const GHistIndexMatrixOneAPI &gmat, const RegTree& tree, sycl::buffer<size_t, 1>& parts_size);
 template void GPUQuantileHistMakerOneAPI::Builder<double>::PartitionKernel<uint32_t>(
     const size_t node_in_set, const size_t nid, common::Range1d range,
-    const int32_t split_cond, const ColumnMatrixOneAPI& column_matrix, const RegTree& tree, cl::sycl::buffer<size_t, 1>& parts_size);
+    const int32_t split_cond, const GHistIndexMatrixOneAPI &gmat, const RegTree& tree, sycl::buffer<size_t, 1>& parts_size);
 
 XGBOOST_REGISTER_TREE_UPDATER(QuantileHistMakerOneAPI, "grow_quantile_histmaker_oneapi")
 .describe("Grow tree using quantized histogram with dpc++.")

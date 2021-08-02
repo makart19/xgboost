@@ -10,6 +10,8 @@
 #include "data_oneapi.h"
 #include "row_set_oneapi.h"
 
+#include "../../src/common/hist_util.h"
+
 #include "CL/sycl.hpp"
 
 namespace xgboost {
@@ -28,14 +30,14 @@ protected:
 public:
   HistogramCutsOneAPI() {}
 
-  HistogramCutsOneAPI(cl::sycl::queue qu) {
+  HistogramCutsOneAPI(sycl::queue qu) {
     cut_ptrs_.Resize(qu_, 1, 0);
   }
 
   ~HistogramCutsOneAPI() {
   }
 
-  void Init(cl::sycl::queue qu, HistogramCuts const& cuts) {
+  void Init(sycl::queue qu, HistogramCuts const& cuts) {
     qu_ = qu;
     cut_values_.Init(qu_, cuts.cut_values_.HostVector());
     cut_ptrs_.Init(qu_, cuts.cut_ptrs_.HostVector());
@@ -51,7 +53,7 @@ private:
   USMVector<bst_float> cut_values_;
   USMVector<uint32_t> cut_ptrs_;
   USMVector<float> min_vals_;
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
 };
 
 /*!
@@ -133,8 +135,8 @@ struct IndexOneAPI {
     return data_.End();
   }
 
-  void setQueue(cl::sycl::queue qu) {
-  	qu_ = qu;
+  void setQueue(sycl::queue qu) {
+    qu_ = qu;
   }
 
  private:
@@ -156,7 +158,7 @@ struct IndexOneAPI {
   size_t p_ {1};
   Func func_;
 
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
 };
 
 
@@ -180,14 +182,15 @@ struct GHistIndexMatrixOneAPI {
   size_t max_num_bins;
   size_t nbins;
   size_t nfeatures;
+  size_t row_stride;
 
   // Create a global histogram matrix based on a given DMatrix device wrapper
-  void Init(cl::sycl::queue qu, const DeviceMatrixOneAPI& p_fmat_device, int max_num_bins);
+  void Init(sycl::queue qu, const DeviceMatrixOneAPI& p_fmat_device, int max_num_bins);
 
   template <typename BinIdxType>
-  void SetIndexData(cl::sycl::queue qu, common::Span<BinIdxType> index_data_span,
+  void SetIndexData(sycl::queue qu, common::Span<BinIdxType> index_data_span,
                     const DeviceMatrixOneAPI &dmat_device,
-                    size_t nbins, uint32_t* offsets);
+                    size_t nbins, size_t row_stride, uint32_t* offsets);
 
   void ResizeIndex(const size_t n_offsets, const size_t n_index,
                    const bool isDense);
@@ -216,15 +219,15 @@ class ColumnMatrixOneAPI;
  * \brief Fill histogram with zeroes
  */
 template<typename GradientSumT>
-void InitHist(cl::sycl::queue qu,
-			  GHistRowOneAPI<GradientSumT>& hist,
-			  size_t size);
+void InitHist(sycl::queue qu,
+              GHistRowOneAPI<GradientSumT>& hist,
+              size_t size);
 
 /*!
  * \brief Copy histogram from src to dst
  */
 template<typename GradientSumT>
-void CopyHist(cl::sycl::queue qu,
+void CopyHist(sycl::queue qu,
               GHistRowOneAPI<GradientSumT>& dst, const GHistRowOneAPI<GradientSumT>& src,
               size_t size);
 
@@ -232,7 +235,7 @@ void CopyHist(cl::sycl::queue qu,
  * \brief Compute subtraction: dst = src1 - src2
  */
 template<typename GradientSumT>
-void SubtractionHist(cl::sycl::queue qu,
+void SubtractionHist(sycl::queue qu,
                      GHistRowOneAPI<GradientSumT>& dst, const GHistRowOneAPI<GradientSumT>& src1,
                      const GHistRowOneAPI<GradientSumT>& src2,
                      size_t size);
@@ -255,7 +258,7 @@ class HistCollectionOneAPI {
   }
 
   // Initialize histogram collection
-  void Init(cl::sycl::queue qu, uint32_t nbins) {
+  void Init(sycl::queue qu, uint32_t nbins) {
     qu_ = qu;
     if (nbins_ != nbins) {
       nbins_ = nbins;
@@ -277,7 +280,7 @@ class HistCollectionOneAPI {
 
   std::vector<GHistRowT> data_;
 
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
 };
 
 /*!
@@ -288,7 +291,7 @@ class ParallelGHistBuilderOneAPI {
  public:
   using GHistRowT = GHistRowOneAPI<GradientSumT>;
 
-  void Init(cl::sycl::queue qu, size_t nbins) {
+  void Init(sycl::queue qu, size_t nbins) {
     qu_ = qu;
     if (nbins != nbins_) {
       hist_buffer_.Init(qu_, nbins);
@@ -313,7 +316,7 @@ class ParallelGHistBuilderOneAPI {
   /*! \brief Buffer for additional histograms for Parallel processing  */
   GHistRowT hist_device_buffer_;
 
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
 };
 
 /*!
@@ -325,7 +328,7 @@ class GHistBuilderOneAPI {
   using GHistRowT = GHistRowOneAPI<GradientSumT>;
 
   GHistBuilderOneAPI() = default;
-  GHistBuilderOneAPI(cl::sycl::queue qu, uint32_t nbins) : qu_{qu}, nbins_{nbins} {}
+  GHistBuilderOneAPI(sycl::queue qu, uint32_t nbins) : qu_{qu}, nbins_{nbins} {}
 
   // Construct a histogram via histogram aggregation
   void BuildHist(const std::vector<GradientPair>& gpair,
@@ -349,7 +352,7 @@ class GHistBuilderOneAPI {
   /*! \brief Number of all bins over all features */
   uint32_t nbins_ { 0 };
 
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
 };
 }  // namespace common
 }  // namespace xgboost

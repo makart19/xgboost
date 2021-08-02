@@ -72,10 +72,10 @@ struct SplitEntryContainerOneAPI {
    * \param new_loss_chg the loss reduction get through the split
    * \param split_index the feature index where the split is on
    */
-  bool NeedReplace(bst_float new_loss_chg, unsigned split_index) const {
-    if (cl::sycl::isinf(new_loss_chg)) {  // in some cases new_loss_chg can be NaN or Inf,
-                                         // for example when lambda = 0 & min_child_weight = 0
-                                         // skip value in this case
+  inline bool NeedReplace(bst_float new_loss_chg, unsigned split_index) const {
+    if (sycl::isinf(new_loss_chg)) {  // in some cases new_loss_chg can be NaN or Inf,
+                                      // for example when lambda = 0 & min_child_weight = 0
+                                      // skip value in this case
       return false;
     } else if (this->SplitIndex() <= split_index) {
       return new_loss_chg > this->loss_chg;

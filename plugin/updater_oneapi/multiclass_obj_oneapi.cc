@@ -33,11 +33,11 @@ template <typename Iterator>
 inline void SoftmaxOneAPI(Iterator start, Iterator end) {
   bst_float wmax = *start;
   for (Iterator i = start+1; i != end; ++i) {
-    wmax = cl::sycl::max(*i, wmax);
+    wmax = sycl::max(*i, wmax);
   }
   double wsum = 0.0f;
   for (Iterator i = start; i != end; ++i) {
-    *i = cl::sycl::exp(*i - wmax);
+    *i = sycl::exp(*i - wmax);
     wsum += *i;
   }
   for (Iterator i = start; i != end; ++i) {
@@ -78,8 +78,8 @@ class SoftmaxMultiClassObjOneAPI : public ObjFunction {
   void Configure(Args const& args) override {
     param_.UpdateAllowUnknown(args);
 
-    cl::sycl::default_selector selector;
-    qu_ = cl::sycl::queue(selector);
+    sycl::default_selector selector;
+    qu_ = sycl::queue(selector);
   }
 
   void GetGradient(const HostDeviceVector<bst_float>& preds,
@@ -107,34 +107,34 @@ class SoftmaxMultiClassObjOneAPI : public ObjFunction {
           << "Number of weights should be equal to number of data points.";
     }
 
-    cl::sycl::buffer<bst_float, 1> preds_buf(preds.HostPointer(), preds.Size());
-    cl::sycl::buffer<bst_float, 1> labels_buf(info.labels_.HostPointer(), info.labels_.Size());
-    cl::sycl::buffer<GradientPair, 1> out_gpair_buf(out_gpair->HostPointer(), out_gpair->Size());
-    cl::sycl::buffer<bst_float, 1> weights_buf(is_null_weight ? NULL : info.weights_.HostPointer(),
+    sycl::buffer<bst_float, 1> preds_buf(preds.HostPointer(), preds.Size());
+    sycl::buffer<bst_float, 1> labels_buf(info.labels_.HostPointer(), info.labels_.Size());
+    sycl::buffer<GradientPair, 1> out_gpair_buf(out_gpair->HostPointer(), out_gpair->Size());
+    sycl::buffer<bst_float, 1> weights_buf(is_null_weight ? NULL : info.weights_.HostPointer(),
                                                is_null_weight ? 1 : info.weights_.Size());
 
-    cl::sycl::buffer<int, 1> additional_input_buf(1);
+    sycl::buffer<int, 1> additional_input_buf(1);
 	{
-		auto additional_input_acc = additional_input_buf.template get_access<cl::sycl::access::mode::write>();
+		auto additional_input_acc = additional_input_buf.template get_access<sycl::access::mode::write>();
 		additional_input_acc[0] = 1; // Fill the label_correct flag
 	}
 
-    qu_.submit([&](cl::sycl::handler& cgh) {
-      auto preds_acc            = preds_buf.template get_access<cl::sycl::access::mode::read>(cgh);
-      auto labels_acc           = labels_buf.template get_access<cl::sycl::access::mode::read>(cgh);
-      auto weights_acc          = weights_buf.template get_access<cl::sycl::access::mode::read>(cgh);
-      auto out_gpair_acc        = out_gpair_buf.template get_access<cl::sycl::access::mode::write>(cgh);
-      auto additional_input_acc = additional_input_buf.template get_access<cl::sycl::access::mode::write>(cgh);
-      cgh.parallel_for<>(cl::sycl::range<1>(ndata), [=](cl::sycl::id<1> pid) {
+    qu_.submit([&](sycl::handler& cgh) {
+      auto preds_acc            = preds_buf.template get_access<sycl::access::mode::read>(cgh);
+      auto labels_acc           = labels_buf.template get_access<sycl::access::mode::read>(cgh);
+      auto weights_acc          = weights_buf.template get_access<sycl::access::mode::read>(cgh);
+      auto out_gpair_acc        = out_gpair_buf.template get_access<sycl::access::mode::write>(cgh);
+      auto additional_input_acc = additional_input_buf.template get_access<sycl::access::mode::write>(cgh);
+      cgh.parallel_for<>(sycl::range<1>(ndata), [=](sycl::id<1> pid) {
         int idx = pid[0];
 
         bst_float const * point = &preds_acc[idx * nclass];
 
         // Part of Softmax function
         bst_float wmax = std::numeric_limits<bst_float>::min();
-        for (int k = 0; k < nclass; k++) { wmax = cl::sycl::max(point[k], wmax); }
+        for (int k = 0; k < nclass; k++) { wmax = sycl::max(point[k], wmax); }
         double wsum = 0.0f;
-        for (int k = 0; k < nclass; k++) { wsum += cl::sycl::exp(point[k] - wmax); }
+        for (int k = 0; k < nclass; k++) { wsum += sycl::exp(point[k] - wmax); }
         auto label = labels_acc[idx];
         if (label < 0 || label >= nclass) {
           additional_input_acc[0] = 0;
@@ -144,7 +144,7 @@ class SoftmaxMultiClassObjOneAPI : public ObjFunction {
         for (int k = 0; k < nclass; ++k) {
           bst_float p = expf(point[k] - wmax) / static_cast<float>(wsum);
           const float eps = 1e-16f;
-          const bst_float h = cl::sycl::max(2.0f * p * (1.0f - p) * wt, eps);
+          const bst_float h = sycl::max(2.0f * p * (1.0f - p) * wt, eps);
           p = label == k ? p - 1.0f : p;
           out_gpair_acc[idx * nclass + k] = GradientPair(p * wt, h);
         }
@@ -153,7 +153,7 @@ class SoftmaxMultiClassObjOneAPI : public ObjFunction {
 
     int flag = 1;
 	{
-		auto additional_input_acc = additional_input_buf.template get_access<cl::sycl::access::mode::read>();
+		auto additional_input_acc = additional_input_buf.template get_access<sycl::access::mode::read>();
 		flag = additional_input_acc[0];
 	}
 
@@ -177,24 +177,24 @@ class SoftmaxMultiClassObjOneAPI : public ObjFunction {
     max_preds_.Resize(ndata);
 
     {
-      cl::sycl::buffer<bst_float, 1> io_preds_buf(io_preds->HostPointer(), io_preds->Size());
+      sycl::buffer<bst_float, 1> io_preds_buf(io_preds->HostPointer(), io_preds->Size());
 
       if (prob) {
-        qu_.submit([&](cl::sycl::handler& cgh) {
-          auto io_preds_acc = io_preds_buf.template get_access<cl::sycl::access::mode::read_write>(cgh);
-          cgh.parallel_for<>(cl::sycl::range<1>(ndata), [=](cl::sycl::id<1> pid) {
+        qu_.submit([&](sycl::handler& cgh) {
+          auto io_preds_acc = io_preds_buf.template get_access<sycl::access::mode::read_write>(cgh);
+          cgh.parallel_for<>(sycl::range<1>(ndata), [=](sycl::id<1> pid) {
             int idx = pid[0];
             bst_float * point = &io_preds_acc[idx * nclass];
             SoftmaxOneAPI(point, point + nclass);
           });
         }).wait();
       } else {
-        cl::sycl::buffer<bst_float, 1> max_preds_buf(max_preds_.HostPointer(), max_preds_.Size());
+        sycl::buffer<bst_float, 1> max_preds_buf(max_preds_.HostPointer(), max_preds_.Size());
 
-        qu_.submit([&](cl::sycl::handler& cgh) {
-          auto io_preds_acc = io_preds_buf.template get_access<cl::sycl::access::mode::read>(cgh);
-          auto max_preds_acc = max_preds_buf.template get_access<cl::sycl::access::mode::read_write>(cgh);
-          cgh.parallel_for<>(cl::sycl::range<1>(ndata), [=](cl::sycl::id<1> pid) {
+        qu_.submit([&](sycl::handler& cgh) {
+          auto io_preds_acc = io_preds_buf.template get_access<sycl::access::mode::read>(cgh);
+          auto max_preds_acc = max_preds_buf.template get_access<sycl::access::mode::read_write>(cgh);
+          cgh.parallel_for<>(sycl::range<1>(ndata), [=](sycl::id<1> pid) {
             int idx = pid[0];
             bst_float const * point = &io_preds_acc[idx * nclass];
             max_preds_acc[idx] = FindMaxIndexOneAPI(point, point + nclass) - point;
@@ -231,7 +231,7 @@ class SoftmaxMultiClassObjOneAPI : public ObjFunction {
   // Cache for max_preds
   HostDeviceVector<bst_float> max_preds_;
 
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
 };
 
 // register the objective functions

@@ -11,7 +11,6 @@
 
 #include <queue>
 
-#include "column_matrix_oneapi.h"
 #include "hist_util_oneapi.h"
 #include "row_set_oneapi.h"
 #include "split_evaluator_oneapi.h"
@@ -64,7 +63,6 @@ namespace tree {
 using xgboost::common::HistCollectionOneAPI;
 using xgboost::common::GHistBuilderOneAPI;
 using xgboost::common::GHistIndexMatrixOneAPI;
-using xgboost::common::ColumnMatrixOneAPI;
 using xgboost::common::GHistRowOneAPI;
 using xgboost::common::RowSetCollectionOneAPI;
 
@@ -111,18 +109,18 @@ class QuantileHistMakerOneAPI: public TreeUpdater {
                              HostDeviceVector<bst_float>* out_preds) override;
 
   void LoadConfig(Json const& in) override {
-  	if (updater_backend_) {
-  	  updater_backend_->LoadConfig(in);
-  	} else {
+    if (updater_backend_) {
+      updater_backend_->LoadConfig(in);
+    } else {
       auto const& config = get<Object const>(in);
       FromJson(config.at("train_param"), &this->param_);
     }
   }
 
   void SaveConfig(Json* p_out) const override {
-  	if (updater_backend_) {
-  	  updater_backend_->SaveConfig(p_out);
-  	} else {
+    if (updater_backend_) {
+      updater_backend_->SaveConfig(p_out);
+    } else {
       auto& out = *p_out;
       out["train_param"] = ToJson(param_);
     }
@@ -130,7 +128,7 @@ class QuantileHistMakerOneAPI: public TreeUpdater {
 
   char const* Name() const override {
     if (updater_backend_) {
-    	return updater_backend_->Name();
+        return updater_backend_->Name();
     } else {
         return "grow_quantile_histmaker_oneapi";
     }
@@ -210,7 +208,6 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
   GHistIndexMatrixOneAPI gmat_;
   // (optional) data matrix with feature grouping
   // column accessor
-  ColumnMatrixOneAPI column_matrix_;
   DMatrix const* p_last_dmat_ {nullptr};
   bool is_gmat_initialized_ {false};
 
@@ -236,7 +233,7 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
     using GHistRowT = GHistRowOneAPI<GradientSumT>;
     using GradientPairT = xgboost::detail::GradientPairInternal<GradientSumT>;
     // constructor
-    explicit Builder(cl::sycl::queue qu,
+    explicit Builder(sycl::queue qu,
                      const TrainParam& param,
                      std::unique_ptr<TreeUpdater> pruner,
                      FeatureInteractionConstraintHost int_constraints_,
@@ -251,7 +248,6 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
     }
     // update one tree, growing
     virtual void Update(const GHistIndexMatrixOneAPI& gmat,
-                        const ColumnMatrixOneAPI& column_matrix,
                         HostDeviceVector<GradientPair>* gpair,
                         DMatrix* p_fmat,
                         RegTree* p_tree);
@@ -342,17 +338,23 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
         bst_uint nodeID,
         TreeEvaluatorOneAPI::SplitEvaluator const &evaluator, const TrainParamOneAPI& param);
 
+    static GradStats EnumerateSplit(sycl::ONEAPI::sub_group& sg,
+        const uint32_t* cut_ptr, const bst_float* cut_val, const GradientPairT* hist_data,
+        const NodeEntry &snode, SplitEntryOneAPI& p_best, bst_uint fid,
+        bst_uint nodeID,
+        TreeEvaluatorOneAPI::SplitEvaluator const &evaluator, const TrainParamOneAPI& param);
+
     void ApplySplit(std::vector<ExpandEntry> nodes,
                         const GHistIndexMatrixOneAPI& gmat,
-                        const ColumnMatrixOneAPI& column_matrix,
                         const HistCollectionOneAPI<GradientSumT>& hist,
                         RegTree* p_tree);
 
     template <typename BinIdxType>
     void PartitionKernel(const size_t node_in_set, const size_t nid, common::Range1d range,
                          const int32_t split_cond,
-                         const ColumnMatrixOneAPI& column_matrix, const RegTree& tree,
-                         cl::sycl::buffer<size_t, 1>& parts_size);
+                         const GHistIndexMatrixOneAPI &gmat,
+                         const RegTree& tree,
+                         sycl::buffer<size_t, 1>& parts_size);
 
     void AddSplitsToRowSet(const std::vector<ExpandEntry>& nodes, RegTree* p_tree);
 
@@ -374,7 +376,6 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
     static bool SplitContainsMissingValues(const GradStats e, const NodeEntry& snode);
 
     void ExpandWithDepthWise(const GHistIndexMatrixOneAPI &gmat,
-                             const ColumnMatrixOneAPI &column_matrix,
                              DMatrix *p_fmat,
                              RegTree *p_tree,
                              const std::vector<GradientPair> &gpair_h,
@@ -411,7 +412,6 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
                         const USMVector<GradientPair> &gpair_device);
 
     void EvaluateAndApplySplits(const GHistIndexMatrixOneAPI &gmat,
-                                const ColumnMatrixOneAPI &column_matrix,
                                 RegTree *p_tree,
                                 int *num_leaves,
                                 int depth,
@@ -428,7 +428,6 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
               std::vector<ExpandEntry>* temp_qexpand_depth);
 
     void ExpandWithLossGuide(const GHistIndexMatrixOneAPI& gmat,
-                             const ColumnMatrixOneAPI& column_matrix,
                              DMatrix* p_fmat,
                              RegTree* p_tree,
                              const std::vector<GradientPair>& gpair_h,
@@ -494,7 +493,7 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
     std::unique_ptr<HistSynchronizerOneAPI<GradientSumT>> hist_synchronizer_;
     std::unique_ptr<HistRowsAdderOneAPI<GradientSumT>> hist_rows_adder_;
 
-    cl::sycl::queue qu_;
+    sycl::queue qu_;
   };
   common::Monitor updater_monitor_;
 
@@ -514,7 +513,7 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
   std::unique_ptr<TreeUpdater> pruner_;
   FeatureInteractionConstraintHost int_constraint_;
 
-  cl::sycl::queue qu_;
+  sycl::queue qu_;
 };
 
 template <typename GradientSumT>
