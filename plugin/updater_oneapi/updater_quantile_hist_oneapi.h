@@ -141,6 +141,23 @@ class QuantileHistMakerOneAPI: public TreeUpdater {
   std::unique_ptr<TreeUpdater> updater_backend_;
 };
 
+// data structure
+template<typename GradType>
+struct NodeEntry {
+  /*! \brief statics for node entry */
+  GradStatsOneAPI<GradType> stats;
+  /*! \brief loss of this node, without split */
+  GradType root_gain;
+  /*! \brief weight calculated related to current data */
+  GradType weight;
+  /*! \brief current best solution */
+  SplitEntryOneAPI<GradType> best;
+  // constructor
+  explicit NodeEntry(const TrainParam& param)
+      : root_gain(0.0f), weight(0.0f) {}
+};
+// actual builder that runs the algorithm
+
 /*! \brief construct a tree using quantized feature values with DPC++ backend on GPU*/
 class GPUQuantileHistMakerOneAPI: public TreeUpdater {
  public:
@@ -210,22 +227,6 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
   // column accessor
   DMatrix const* p_last_dmat_ {nullptr};
   bool is_gmat_initialized_ {false};
-
-  // data structure
-  struct NodeEntry {
-    /*! \brief statics for node entry */
-    GradStats stats;
-    /*! \brief loss of this node, without split */
-    bst_float root_gain;
-    /*! \brief weight calculated related to current data */
-    float weight;
-    /*! \brief current best solution */
-    SplitEntryOneAPI best;
-    // constructor
-    explicit NodeEntry(const TrainParam& param)
-        : root_gain(0.0f), weight(0.0f) {}
-  };
-  // actual builder that runs the algorithm
 
   template<typename GradientSumT>
   struct Builder {
@@ -304,11 +305,10 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
       }
     };
 
-
     struct SplitQuery {
       int nid;
       int fid;
-      SplitEntryOneAPI best;
+      SplitEntryOneAPI<GradientSumT> best;
       const GradientPairT* hist;
     };
 
@@ -332,17 +332,17 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
     // Returns the sum of gradients corresponding to the data points that contains a non-missing
     // value for the particular feature fid.
     template <int d_step>
-    static GradStats EnumerateSplit(
+    static GradStatsOneAPI<GradientSumT> EnumerateSplit(
         const uint32_t* cut_ptr,const bst_float* cut_val, const bst_float* cut_minval, const GradientPairT* hist_data,
-        const NodeEntry &snode, SplitEntryOneAPI& p_best, bst_uint fid,
+        const NodeEntry<GradientSumT> &snode, SplitEntryOneAPI<GradientSumT>& p_best, bst_uint fid,
         bst_uint nodeID,
-        TreeEvaluatorOneAPI::SplitEvaluator const &evaluator, const TrainParamOneAPI& param);
+        typename TreeEvaluatorOneAPI<GradientSumT>::SplitEvaluator const &evaluator, const TrainParamOneAPI& param);
 
-    static GradStats EnumerateSplit(sycl::ONEAPI::sub_group& sg,
+    static GradStatsOneAPI<GradientSumT> EnumerateSplit(sycl::ext::oneapi::sub_group& sg,
         const uint32_t* cut_ptr, const bst_float* cut_val, const GradientPairT* hist_data,
-        const NodeEntry &snode, SplitEntryOneAPI& p_best, bst_uint fid,
+        const NodeEntry<GradientSumT> &snode, SplitEntryOneAPI<GradientSumT>& p_best, bst_uint fid,
         bst_uint nodeID,
-        TreeEvaluatorOneAPI::SplitEvaluator const &evaluator, const TrainParamOneAPI& param);
+        typename TreeEvaluatorOneAPI<GradientSumT>::SplitEvaluator const &evaluator, const TrainParamOneAPI& param);
 
     void ApplySplit(std::vector<ExpandEntry> nodes,
                         const GHistIndexMatrixOneAPI& gmat,
@@ -373,7 +373,7 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
     // is equal to sum of statistics for all values:
     // then - there are no missing values
     // else - there are missing values
-    static bool SplitContainsMissingValues(const GradStats e, const NodeEntry& snode);
+    static bool SplitContainsMissingValues(const GradStatsOneAPI<GradientSumT>& e, const NodeEntry<GradientSumT>& snode);
 
     void ExpandWithDepthWise(const GHistIndexMatrixOneAPI &gmat,
                              DMatrix *p_fmat,
@@ -451,12 +451,12 @@ class GPUQuantileHistMakerOneAPI: public TreeUpdater {
     RowSetCollectionOneAPI row_set_collection_;
     USMVector<SplitQuery> split_queries_device_;
     /*! \brief TreeNode Data: statistics for each constructed node */
-    USMVector<NodeEntry> snode_;
+    USMVector<NodeEntry<GradientSumT>> snode_;
     /*! \brief culmulative histogram of gradients. */
     HistCollectionOneAPI<GradientSumT> hist_;
     /*! \brief culmulative local parent histogram of gradients. */
     HistCollectionOneAPI<GradientSumT> hist_local_worker_;
-    TreeEvaluatorOneAPI tree_evaluator_;
+    TreeEvaluatorOneAPI<GradientSumT> tree_evaluator_;
     /*! \brief feature with least # of bins. to be used for dense specialization
                of InitNewNode() */
     uint32_t fid_least_bins_;

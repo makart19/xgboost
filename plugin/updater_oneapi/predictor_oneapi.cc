@@ -32,9 +32,9 @@ class PredictorOneAPI : public Predictor {
       LOG(INFO) << "device_id = " << i << ", name = " << devices[i].get_info<sycl::info::device::name>();
     }
     if (generic_param->device_id != GenericParameter::kDefaultId) {
-    	int n_devices = (int)devices.size();
-    	CHECK_LT(generic_param->device_id, n_devices);
-    	is_cpu = devices[generic_param->device_id].is_cpu() | devices[generic_param->device_id].is_host();
+      int n_devices = (int)devices.size();
+      CHECK_LT(generic_param->device_id, n_devices);
+      is_cpu = devices[generic_param->device_id].is_cpu() | devices[generic_param->device_id].is_host();
     }
     LOG(INFO) << "device_id = " << generic_param->device_id << ", is_cpu = " << int(is_cpu);
     
@@ -49,9 +49,9 @@ class PredictorOneAPI : public Predictor {
   }
 
   void Configure(const std::vector<std::pair<std::string, std::string>>& args) override {
-  	if (predictor_backend_) {
-  	  predictor_backend_->Configure(args);
-  	}
+    if (predictor_backend_) {
+      predictor_backend_->Configure(args);
+    }
   }
 
   void PredictBatch(DMatrix *dmat, PredictionCacheEntry *predts,
@@ -64,13 +64,13 @@ class PredictorOneAPI : public Predictor {
                       const gbm::GBTreeModel &model, float missing,
                       PredictionCacheEntry *out_preds, uint32_t tree_begin,
                       unsigned tree_end) const override {
-  	return predictor_backend_->InplacePredict(x, p_m, model, missing, out_preds, tree_begin, tree_end);
+    return predictor_backend_->InplacePredict(x, p_m, model, missing, out_preds, tree_begin, tree_end);
   }
 
   void PredictInstance(const SparsePage::Inst& inst,
                        std::vector<bst_float>* out_preds,
                        const gbm::GBTreeModel& model, unsigned ntree_limit) const override {
-  	predictor_backend_->PredictInstance(inst, out_preds, model, ntree_limit);
+    predictor_backend_->PredictInstance(inst, out_preds, model, ntree_limit);
   }
 
   void PredictLeaf(DMatrix* p_fmat, HostDeviceVector<bst_float>* out_preds,
@@ -272,7 +272,7 @@ void DevicePredictInternal(sycl::queue qu,
 
   qu.submit([&](sycl::handler& cgh) {
     auto out_predictions = out_preds_buf.template get_access<sycl::access::mode::read_write>(cgh);
-    cgh.parallel_for<class PredictInternal>(sycl::range<1>(num_rows), [=](sycl::id<1> pid) {
+    cgh.parallel_for<>(sycl::range<1>(num_rows), [=](sycl::id<1> pid) {
       int global_idx = pid[0];
       if (global_idx >= num_rows) return;
       if (num_group == 1) {
@@ -333,7 +333,7 @@ class GPUPredictorOneAPI : public Predictor {
     std::vector<sycl::device> devices = sycl::device::get_devices();
     if (generic_param->device_id != GenericParameter::kDefaultId) {
       qu_ = sycl::queue(devices[generic_param->device_id]);
-    } else {	
+    } else {
       sycl::default_selector selector;
       qu_ = sycl::queue(selector);
     }
@@ -369,13 +369,13 @@ class GPUPredictorOneAPI : public Predictor {
                       const gbm::GBTreeModel &model, float missing,
                       PredictionCacheEntry *out_preds, uint32_t tree_begin,
                       unsigned tree_end) const override {
-  	return cpu_predictor->InplacePredict(x, p_m, model, missing, out_preds, tree_begin, tree_end);
+    return cpu_predictor->InplacePredict(x, p_m, model, missing, out_preds, tree_begin, tree_end);
   }
 
   void PredictInstance(const SparsePage::Inst& inst,
                        std::vector<bst_float>* out_preds,
                        const gbm::GBTreeModel& model, unsigned ntree_limit) const override {
-  	cpu_predictor->PredictInstance(inst, out_preds, model, ntree_limit);
+    cpu_predictor->PredictInstance(inst, out_preds, model, ntree_limit);
   }
 
   void PredictLeaf(DMatrix* p_fmat, HostDeviceVector<bst_float>* out_preds,
