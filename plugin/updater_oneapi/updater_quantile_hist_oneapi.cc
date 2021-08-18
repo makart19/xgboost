@@ -1060,20 +1060,20 @@ GradStatsOneAPI<GradientSumT> GPUQuantileHistMakerOneAPI::Builder<GradientSumT>:
   int32_t ibegin = static_cast<int32_t>(cut_ptr[fid]);
   int32_t iend = static_cast<int32_t>(cut_ptr[fid + 1]);
 
-  double tot_grad = snode.stats.GetGrad();
-  double tot_hess = snode.stats.GetHess();
+  GradientSumT tot_grad = snode.stats.GetGrad();
+  GradientSumT tot_hess = snode.stats.GetHess();
 
-  double sum_grad = 0.0f;
-  double sum_hess = 0.0f;
+  GradientSumT sum_grad = 0.0f;
+  GradientSumT sum_hess = 0.0f;
 
   int32_t local_size = sg.get_local_range().size();
 
   for (int32_t i = ibegin + sg.get_local_id(); i < iend; i += local_size) {
-    double e_grad = sum_grad + sycl::inclusive_scan_over_group(sg, hist_data[i].GetGrad(), std::plus<>());
-    double e_hess = sum_hess + sycl::inclusive_scan_over_group(sg, hist_data[i].GetHess(), std::plus<>());
+    GradientSumT e_grad = sum_grad + sycl::inclusive_scan_over_group(sg, hist_data[i].GetGrad(), std::plus<>());
+    GradientSumT e_hess = sum_hess + sycl::inclusive_scan_over_group(sg, hist_data[i].GetHess(), std::plus<>());
     if (e_hess >= param.min_child_weight) {
-      double c_grad = tot_grad - e_grad;
-      double c_hess = tot_hess - e_hess;
+      GradientSumT c_grad = tot_grad - e_grad;
+      GradientSumT c_hess = tot_hess - e_hess;
       if (c_hess >= param.min_child_weight) {
         GradStatsOneAPI<GradientSumT> e(e_grad, e_hess);
         GradStatsOneAPI<GradientSumT> c(c_grad, c_hess);
