@@ -122,7 +122,11 @@ void GPUQuantileHistMakerOneAPI::Update(HostDeviceVector<GradientPair> *gpair,
   param_.learning_rate = lr / trees.size();
   int_constraint_.Configure(param_, dmat->Info().num_col_);
   // build tree
-  if (hist_maker_param_.single_precision_histogram) {
+  bool has_double_support = qu_.get_device().has(sycl::aspect::fp64);
+  if (hist_maker_param_.single_precision_histogram || !has_double_support) {
+    if (!hist_maker_param_.single_precision_histogram) {
+      LOG(WARNING) << "Target device doesn't support fp64, using single_precision_histogram=True";
+    }
     if (!float_builder_) {
       SetBuilder(&float_builder_, dmat);
     }
@@ -144,7 +148,8 @@ bool GPUQuantileHistMakerOneAPI::UpdatePredictionCache(const DMatrix* data,
   if (param_.subsample < 1.0f) {
     return false;
   } else {
-    if (hist_maker_param_.single_precision_histogram && float_builder_) {
+    bool has_double_support = qu_.get_device().has(sycl::aspect::fp64);
+    if ((hist_maker_param_.single_precision_histogram || !has_double_support) && float_builder_) {
         return float_builder_->UpdatePredictionCache(data, out_preds);
     } else if (double_builder_) {
         return double_builder_->UpdatePredictionCache(data, out_preds);

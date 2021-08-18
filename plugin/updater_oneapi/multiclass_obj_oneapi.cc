@@ -35,7 +35,7 @@ inline void SoftmaxOneAPI(Iterator start, Iterator end) {
   for (Iterator i = start+1; i != end; ++i) {
     wmax = sycl::max(*i, wmax);
   }
-  double wsum = 0.0f;
+  float wsum = 0.0f;
   for (Iterator i = start; i != end; ++i) {
     *i = sycl::exp(*i - wmax);
     wsum += *i;
@@ -133,7 +133,7 @@ class SoftmaxMultiClassObjOneAPI : public ObjFunction {
         // Part of Softmax function
         bst_float wmax = std::numeric_limits<bst_float>::min();
         for (int k = 0; k < nclass; k++) { wmax = sycl::max(point[k], wmax); }
-        double wsum = 0.0f;
+        float wsum = 0.0f;
         for (int k = 0; k < nclass; k++) { wsum += sycl::exp(point[k] - wmax); }
         auto label = labels_acc[idx];
         if (label < 0 || label >= nclass) {
