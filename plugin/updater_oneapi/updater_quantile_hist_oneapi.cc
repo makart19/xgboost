@@ -963,7 +963,7 @@ void GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::EvaluateSplits(
       TrainParamOneAPI param_device(param);
       typename TreeEvaluatorOneAPI<GradientSumT>::SplitEvaluator evaluator_device = evaluator;
       int i = pid.get_global_id(0);
-      sycl::ext::oneapi::sub_group sg = pid.get_sub_group();
+      sycl::ONEAPI::sub_group sg = pid.get_sub_group();
       int nid = split_queries_device[i].nid;
       int fid = split_queries_device[i].fid;
       const GradientPairT* hist_data = split_queries_device[i].hist;
@@ -1050,7 +1050,7 @@ GradStatsOneAPI<GradientSumT> GPUQuantileHistMakerOneAPI::Builder<GradientSumT>:
 // for the particular feature fid.
 template <typename GradientSumT>
 GradStatsOneAPI<GradientSumT> GPUQuantileHistMakerOneAPI::Builder<GradientSumT>::EnumerateSplit(
-    sycl::ext::oneapi::sub_group& sg,
+    sycl::ONEAPI::sub_group& sg,
     const uint32_t* cut_ptr,
     const bst_float* cut_val,
     const GradientPairT* hist_data,
@@ -1074,8 +1074,8 @@ GradStatsOneAPI<GradientSumT> GPUQuantileHistMakerOneAPI::Builder<GradientSumT>:
   int32_t local_size = sg.get_local_range().size();
 
   for (int32_t i = ibegin + sg.get_local_id(); i < iend; i += local_size) {
-    GradientSumT e_grad = sum_grad + sycl::inclusive_scan_over_group(sg, hist_data[i].GetGrad(), std::plus<>());
-    GradientSumT e_hess = sum_hess + sycl::inclusive_scan_over_group(sg, hist_data[i].GetHess(), std::plus<>());
+    GradientSumT e_grad = sum_grad + sycl::ONEAPI::inclusive_scan(sg, hist_data[i].GetGrad(), std::plus<>());
+    GradientSumT e_hess = sum_hess + sycl::ONEAPI::inclusive_scan(sg, hist_data[i].GetHess(), std::plus<>());
     if (e_hess >= param.min_child_weight) {
       GradientSumT c_grad = tot_grad - e_grad;
       GradientSumT c_hess = tot_hess - e_hess;
@@ -1090,12 +1090,12 @@ GradStatsOneAPI<GradientSumT> GPUQuantileHistMakerOneAPI::Builder<GradientSumT>:
         best.Update(loss_chg, fid, split_pt, false, e, c);
       }
     }
-    sum_grad += sycl::reduce_over_group(sg, hist_data[i].GetGrad(), std::plus<>());
-    sum_hess += sycl::reduce_over_group(sg, hist_data[i].GetHess(), std::plus<>());
+    sum_grad += sycl::ONEAPI::reduce(sg, hist_data[i].GetGrad(), std::plus<>());
+    sum_hess += sycl::ONEAPI::reduce(sg, hist_data[i].GetHess(), std::plus<>());
   }
 
-  bst_float total_loss_chg = sycl::reduce_over_group(sg, best.loss_chg, sycl::ext::oneapi::maximum<>());
-  bst_feature_t total_split_index = sycl::reduce_over_group(sg, best.loss_chg == total_loss_chg ? best.SplitIndex() : (1U << 31) - 1U, sycl::ext::oneapi::minimum<>());
+  bst_float total_loss_chg = sycl::ONEAPI::reduce(sg, best.loss_chg, sycl::ONEAPI::maximum<>());
+  bst_feature_t total_split_index = sycl::ONEAPI::reduce(sg, best.loss_chg == total_loss_chg ? best.SplitIndex() : (1U << 31) - 1U, sycl::ONEAPI::minimum<>());
   if (best.loss_chg == total_loss_chg && best.SplitIndex() == total_split_index) p_best.Update(best);
   return GradStatsOneAPI<GradientSumT>(sum_grad, sum_hess);
 }
