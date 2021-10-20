@@ -13,6 +13,8 @@ rng = np.random.RandomState(1994)
 
 pytestmark = pytest.mark.skipif(**tm.no_sklearn())
 
+from sklearn.utils.estimator_checks import parametrize_with_checks
+
 
 class TemporaryDirectory(object):
     """Context manager for tempfile.mkdtemp()"""
@@ -211,6 +213,7 @@ def test_feature_importances_weight():
     digits = load_digits(n_class=2)
     y = digits['target']
     X = digits['data']
+
     xgb_model = xgb.XGBClassifier(random_state=0,
                                   tree_method="exact",
                                   learning_rate=0.1,
@@ -240,6 +243,33 @@ def test_feature_importances_weight():
                                   learning_rate=0.1,
                                   importance_type="weight").fit(X, y)
     np.testing.assert_almost_equal(xgb_model.feature_importances_, exp)
+
+    with pytest.raises(ValueError):
+        xgb_model.set_params(importance_type="foo")
+        xgb_model.feature_importances_
+
+    X, y = load_digits(n_class=3, return_X_y=True)
+
+    cls = xgb.XGBClassifier(booster="gblinear", n_estimators=4)
+    cls.fit(X, y)
+    assert cls.feature_importances_.shape[0] == X.shape[1]
+    assert cls.feature_importances_.shape[1] == 3
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "model.json")
+        cls.save_model(path)
+        with open(path, "r") as fd:
+            model = json.load(fd)
+    weights = np.array(
+        model["learner"]["gradient_booster"]["model"]["weights"]
+    ).reshape((cls.n_features_in_ + 1, 3))
+    weights = weights[:-1, ...]
+    np.testing.assert_allclose(
+        weights / weights.sum(), cls.feature_importances_, rtol=1e-6
+    )
+
+    with pytest.raises(ValueError):
+        cls.set_params(importance_type="cover")
+        cls.feature_importances_
 
 
 @pytest.mark.skipif(**tm.no_pandas())
@@ -371,6 +401,10 @@ def run_boston_housing_rf_regression(tree_method):
         preds = xgb_model.predict(X[test_index])
         labels = y[test_index]
         assert mean_squared_error(preds, labels) < 35
+
+    rfreg = xgb.XGBRFRegressor()
+    with pytest.raises(NotImplementedError):
+        rfreg.fit(X, y, early_stopping_rounds=10)
 
 
 def test_boston_housing_rf_regression():
@@ -804,10 +838,14 @@ def save_load_model(model_path):
     for train_index, test_index in kf.split(X, y):
         xgb_model = xgb.XGBClassifier(use_label_encoder=False).fit(X[train_index], y[train_index])
         xgb_model.save_model(model_path)
-        xgb_model = xgb.XGBClassifier(use_label_encoder=False)
+
+        xgb_model = xgb.XGBClassifier()
         xgb_model.load_model(model_path)
+
+        assert xgb_model.use_label_encoder is False
         assert isinstance(xgb_model.classes_, np.ndarray)
         assert isinstance(xgb_model._Booster, xgb.Booster)
+
         preds = xgb_model.predict(X[test_index])
         labels = y[test_index]
         err = sum(1 for i in range(len(preds))
@@ -1191,3 +1229,49 @@ def test_data_initialization():
     from sklearn.datasets import load_digits
     X, y = load_digits(return_X_y=True)
     run_data_initialization(xgb.DMatrix, xgb.XGBClassifier, X, y)
+
+
+@parametrize_with_checks([xgb.XGBRegressor()])
+def test_estimator_reg(estimator, check):
+    if os.environ["PYTEST_CURRENT_TEST"].find("check_supervised_y_no_nan") != -1:
+        # The test uses float64 and requires the error message to contain:
+        #
+        #   "value too large for dtype(float64)",
+        #
+        # while XGBoost stores values as float32.  But XGBoost does verify the label
+        # internally, so we replace this test with custom check.
+        rng = np.random.RandomState(888)
+        X = rng.randn(10, 5)
+        y = np.full(10, np.inf)
+        with pytest.raises(
+            ValueError, match="contains NaN, infinity or a value too large"
+        ):
+            estimator.fit(X, y)
+        return
+    if os.environ["PYTEST_CURRENT_TEST"].find("check_estimators_overwrite_params") != -1:
+        # A hack to pass the scikit-learn parameter mutation tests.  XGBoost regressor
+        # returns actual internal default values for parameters in `get_params`, but those
+        # are set as `None` in sklearn interface to avoid duplication.  So we fit a dummy
+        # model and obtain the default parameters here for the mutation tests.
+        from sklearn.datasets import make_regression
+        X, y = make_regression(n_samples=2, n_features=1)
+        estimator.set_params(**xgb.XGBRegressor().fit(X, y).get_params())
+
+    check(estimator)
+
+
+def test_prediction_config():
+    reg = xgb.XGBRegressor()
+    assert reg._can_use_inplace_predict() is True
+
+    reg.set_params(predictor="cpu_predictor")
+    assert reg._can_use_inplace_predict() is False
+
+    reg.set_params(predictor="auto")
+    assert reg._can_use_inplace_predict() is True
+
+    reg.set_params(predictor=None)
+    assert reg._can_use_inplace_predict() is True
+
+    reg.set_params(booster="gblinear")
+    assert reg._can_use_inplace_predict() is False

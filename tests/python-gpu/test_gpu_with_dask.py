@@ -1,11 +1,13 @@
 import sys
 import os
-from typing import Type, TypeVar, Any, Dict, List
+from typing import Type, TypeVar, Any, Dict, List, Tuple
 import pytest
 import numpy as np
 import asyncio
 import xgboost
 import subprocess
+import tempfile
+import json
 from collections import OrderedDict
 from inspect import signature
 from hypothesis import given, strategies, settings, note
@@ -26,6 +28,7 @@ from test_with_dask import _get_client_workers        # noqa
 from test_with_dask import generate_array             # noqa
 from test_with_dask import kCols as random_cols       # noqa
 from test_with_dask import suppress                   # noqa
+from test_with_dask import run_tree_stats             # noqa
 import testing as tm                                  # noqa
 
 
@@ -39,6 +42,49 @@ try:
     import cudf
 except ImportError:
     pass
+
+
+def make_categorical(
+    client: Client,
+    n_samples: int,
+    n_features: int,
+    n_categories: int,
+    onehot: bool = False,
+) -> Tuple[dd.DataFrame, dd.Series]:
+    workers = _get_client_workers(client)
+    n_workers = len(workers)
+    dfs = []
+
+    def pack(**kwargs: Any) -> dd.DataFrame:
+        X, y = tm.make_categorical(**kwargs)
+        X["label"] = y
+        return X
+
+    meta = pack(
+        n_samples=1, n_features=n_features, n_categories=n_categories, onehot=False
+    )
+
+    for i, worker in enumerate(workers):
+        l_n_samples = min(
+            n_samples // n_workers, n_samples - i * (n_samples // n_workers)
+        )
+        future = client.submit(
+            pack,
+            n_samples=l_n_samples,
+            n_features=n_features,
+            n_categories=n_categories,
+            onehot=False,
+            workers=[worker],
+        )
+        dfs.append(future)
+
+    df = dd.from_delayed(dfs, meta=meta)
+    y = df["label"]
+    X = df[df.columns.difference(["label"])]
+
+    if onehot:
+        return dd.get_dummies(X), y
+    return X, y
 
 
 def run_with_dask_dataframe(DMatrixT: Type, client: Client) -> None:
@@ -62,19 +108,17 @@ def run_with_dask_dataframe(DMatrixT: Type, client: Client) -> None:
     assert isinstance(out['booster'], dxgb.Booster)
     assert len(out['history']['X']['rmse']) == 4
 
-    predictions = dxgb.predict(client, out, dtrain).compute()
-    assert isinstance(predictions, np.ndarray)
+    predictions = dxgb.predict(client, out, dtrain)
+    assert isinstance(predictions.compute(), np.ndarray)
 
     series_predictions = dxgb.inplace_predict(client, out, X)
     assert isinstance(series_predictions, dd.Series)
-    series_predictions = series_predictions.compute()
 
-    single_node = out['booster'].predict(
-        xgboost.DMatrix(X.compute()))
+    single_node = out['booster'].predict(xgboost.DMatrix(X.compute()))
 
-    cp.testing.assert_allclose(single_node, predictions)
+    cp.testing.assert_allclose(single_node, predictions.compute())
     np.testing.assert_allclose(single_node,
-                               series_predictions.to_array())
+                               series_predictions.compute().to_array())
 
     predt = dxgb.predict(client, out, X)
     assert isinstance(predt, dd.Series)
@@ -91,6 +135,13 @@ def run_with_dask_dataframe(DMatrixT: Type, client: Client) -> None:
 
     cp.testing.assert_allclose(
         predt.values.compute(), single_node)
+
+    # Make sure the output can be integrated back to original dataframe
+    X["predict"] = predictions
+    X["inplace_predict"] = series_predictions
+
+    has_null = X.isnull().values.any().compute()
+    assert bool(has_null) is False
 
 
 def run_with_dask_array(DMatrixT: Type, client: Client) -> None:
@@ -119,6 +170,76 @@ def run_with_dask_array(DMatrixT: Type, client: Client) -> None:
     cp.testing.assert_allclose(
         single_node,
         inplace_predictions)
+
+
+@pytest.mark.skipif(**tm.no_dask_cudf())
+def test_categorical(local_cuda_cluster: LocalCUDACluster) -> None:
+    with Client(local_cuda_cluster) as client:
+        import dask_cudf
+
+        rounds = 10
+        X, y = make_categorical(client, 10000, 30, 13)
+        X = dask_cudf.from_dask_dataframe(X)
+
+        X_onehot, _ = make_categorical(client, 10000, 30, 13, True)
+        X_onehot = dask_cudf.from_dask_dataframe(X_onehot)
+
+        parameters = {"tree_method": "gpu_hist"}
+
+        m = dxgb.DaskDMatrix(client, X_onehot, y, enable_categorical=True)
+        by_etl_results = dxgb.train(
+            client,
+            parameters,
+            m,
+            num_boost_round=rounds,
+            evals=[(m, "Train")],
+        )["history"]
+
+        m = dxgb.DaskDMatrix(client, X, y, enable_categorical=True)
+        output = dxgb.train(
+            client,
+            parameters,
+            m,
+            num_boost_round=rounds,
+            evals=[(m, "Train")],
+        )
+        by_builtin_results = output["history"]
+
+        np.testing.assert_allclose(
+            np.array(by_etl_results["Train"]["rmse"]),
+            np.array(by_builtin_results["Train"]["rmse"]),
+            rtol=1e-3,
+        )
+        assert tm.non_increasing(by_builtin_results["Train"]["rmse"])
+
+        def check_model_output(model: dxgb.Booster) -> None:
+            with tempfile.TemporaryDirectory() as tempdir:
+                path = os.path.join(tempdir, "model.json")
+                model.save_model(path)
+                with open(path, "r") as fd:
+                    categorical = json.load(fd)
+
+                categories_sizes = np.array(
+                    categorical["learner"]["gradient_booster"]["model"]["trees"][-1][
+                        "categories_sizes"
+                    ]
+                )
+                assert categories_sizes.shape[0] != 0
+                np.testing.assert_allclose(categories_sizes, 1)
+
+        check_model_output(output["booster"])
+        reg = dxgb.DaskXGBRegressor(
+            enable_categorical=True, n_estimators=10, tree_method="gpu_hist"
+        )
+        reg.fit(X, y)
+
+        check_model_output(reg.get_booster())
+
+        reg = dxgb.DaskXGBRegressor(
+            enable_categorical=True, n_estimators=10
+        )
+        with pytest.raises(ValueError):
+            reg.fit(X, y)
 
 
 def to_cp(x: Any, DMatrixT: Type) -> Any:
@@ -269,7 +390,9 @@ class TestDistributedGPU:
     @pytest.mark.skipif(**tm.no_dask())
     @pytest.mark.skipif(**tm.no_dask_cuda())
     @pytest.mark.parametrize("model", ["boosting"])
-    def test_dask_classifier(self, model, local_cuda_cluster: LocalCUDACluster) -> None:
+    def test_dask_classifier(
+        self, model: str, local_cuda_cluster: LocalCUDACluster
+    ) -> None:
         import dask_cudf
         with Client(local_cuda_cluster) as client:
             X_, y_, w_ = generate_array(with_weights=True)
@@ -369,6 +492,17 @@ class TestDistributedGPU:
 
         for rn, drn in zip(ranker_names, dranker_names):
             assert rn == drn
+
+    def test_tree_stats(self) -> None:
+        with LocalCUDACluster(n_workers=1) as cluster:
+            with Client(cluster) as client:
+                local = run_tree_stats(client, "gpu_hist")
+
+        with LocalCUDACluster(n_workers=2) as cluster:
+            with Client(cluster) as client:
+                distributed = run_tree_stats(client, "gpu_hist")
+
+        assert local == distributed
 
     def run_quantile(self, name: str, local_cuda_cluster: LocalCUDACluster) -> None:
         if sys.platform.startswith("win"):

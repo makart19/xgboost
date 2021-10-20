@@ -75,8 +75,8 @@ Parameters for Tree Booster
 
 * ``max_depth`` [default=6]
 
-  - Maximum depth of a tree. Increasing this value will make the model more complex and more likely to overfit. 0 is only accepted in ``lossguided`` growing policy when tree_method is set as ``hist`` or ``gpu_hist`` and it indicates no limit on depth. Beware that XGBoost aggressively consumes memory when training a deep tree.
-  - range: [0,∞] (0 is only accepted in ``lossguided`` growing policy when tree_method is set as ``hist`` or ``gpu_hist``)
+  - Maximum depth of a tree. Increasing this value will make the model more complex and more likely to overfit. 0 is only accepted in ``lossguide`` growing policy when tree_method is set as ``hist`` or ``gpu_hist`` and it indicates no limit on depth. Beware that XGBoost aggressively consumes memory when training a deep tree.
+  - range: [0,∞] (0 is only accepted in ``lossguide`` growing policy when tree_method is set as ``hist`` or ``gpu_hist``)
 
 * ``min_child_weight`` [default=1]
 
@@ -177,7 +177,7 @@ Parameters for Tree Booster
     - ``grow_gpu_hist``: Grow tree with GPU.
     - ``sync``: synchronizes trees in all distributed nodes.
     - ``refresh``: refreshes tree's statistics and/or leaf values based on the current data. Note that no random subsampling of data rows is performed.
-    - ``prune``: prunes the splits where loss < min_split_loss (or gamma).
+    - ``prune``: prunes the splits where loss < min_split_loss (or gamma) and nodes that have depth greater than ``max_depth``.
 
   - In a distributed setting, the implicit updater sequence value would be adjusted to ``grow_histmaker,prune`` by default, and you can set ``tree_method`` as ``hist`` to use ``grow_histmaker``.
 
@@ -191,7 +191,7 @@ Parameters for Tree Booster
   - Choices: ``default``, ``update``
 
     - ``default``: The normal boosting process which creates new trees.
-    - ``update``: Starts from an existing model and only updates its trees. In each boosting iteration, a tree from the initial model is taken, a specified sequence of updaters is run for that tree, and a modified tree is added to the new model. The new model would have either the same or smaller number of trees, depending on the number of boosting iteratons performed. Currently, the following built-in updaters could be meaningfully used with this process type: ``refresh``, ``prune``. With ``process_type=update``, one cannot use updaters that create new trees.
+    - ``update``: Starts from an existing model and only updates its trees. In each boosting iteration, a tree from the initial model is taken, a specified sequence of updaters is run for that tree, and a modified tree is added to the new model. The new model would have either the same or smaller number of trees, depending on the number of boosting iterations performed. Currently, the following built-in updaters could be meaningfully used with this process type: ``refresh``, ``prune``. With ``process_type=update``, one cannot use updaters that create new trees.
 
 * ``grow_policy`` [default= ``depthwise``]
 
@@ -244,16 +244,6 @@ Additional parameters for ``hist`` and ``gpu_hist`` tree method
 * ``single_precision_histogram``, [default=``false``]
 
   - Use single precision to build histograms instead of double precision.
-
-Additional parameters for ``gpu_hist`` tree method
-==================================================
-
-* ``deterministic_histogram``, [default=``true``]
-
-  - Build histogram on GPU deterministically.  Histogram building is not deterministic due
-    to the non-associative aspect of floating point summation.  We employ a pre-rounding
-    routine to mitigate the issue, which may lead to slightly lower accuracy.  Set to
-    ``false`` to disable it.
 
 Additional parameters for Dart Booster (``booster=dart``)
 =========================================================
@@ -362,15 +352,15 @@ Specify the learning task and the corresponding learning objective. The objectiv
   - ``binary:logistic``: logistic regression for binary classification, output probability
   - ``binary:logitraw``: logistic regression for binary classification, output score before logistic transformation
   - ``binary:hinge``: hinge loss for binary classification. This makes predictions of 0 or 1, rather than producing probabilities.
-  - ``count:poisson`` --poisson regression for count data, output mean of poisson distribution
+  - ``count:poisson`` --poisson regression for count data, output mean of Poisson distribution
 
-    - ``max_delta_step`` is set to 0.7 by default in poisson regression (used to safeguard optimization)
+    - ``max_delta_step`` is set to 0.7 by default in Poisson regression (used to safeguard optimization)
 
   - ``survival:cox``: Cox regression for right censored survival time data (negative values are considered right censored).
     Note that predictions are returned on the hazard ratio scale (i.e., as HR = exp(marginal_prediction) in the proportional hazard function ``h(t) = h0(t) * HR``).
   - ``survival:aft``: Accelerated failure time model for censored survival time data.
     See :doc:`/tutorials/aft_survival_analysis` for details.
-  - ``aft_loss_distribution``: Probabilty Density Function used by ``survival:aft`` objective and ``aft-nloglik`` metric.
+  - ``aft_loss_distribution``: Probability Density Function used by ``survival:aft`` objective and ``aft-nloglik`` metric.
   - ``multi:softmax``: set XGBoost to do multiclass classification using the softmax objective, you also need to set num_class(number of classes)
   - ``multi:softprob``: same as softmax, but output a vector of ``ndata * nclass``, which can be further reshaped to ``ndata * nclass`` matrix. The result contains predicted probability of each data point belonging to each class.
   - ``rank:pairwise``: Use LambdaMART to perform pairwise ranking where the pairwise loss is minimized

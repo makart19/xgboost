@@ -28,11 +28,11 @@ def _get_callback_context(env):
 def _fmt_metric(value, show_stdv=True):
     """format metric string"""
     if len(value) == 2:
-        return '{0}:{1:.5f}'.format(value[0], value[1])
+        return f"{value[0]}:{value[1]:.5f}"
     if len(value) == 3:
         if show_stdv:
-            return '{0}:{1:.5f}+{2:.5f}'.format(value[0], value[1], value[2])
-        return '{0}:{1:.5f}'.format(value[0], value[1])
+            return f"{value[0]}:{value[1]:.5f}+{value[2]:.5f}"
+        return f"{value[0]}:{value[1]:.5f}"
     raise ValueError("wrong metric value", value)
 
 
@@ -62,7 +62,7 @@ def print_evaluation(period=1, show_stdv=True):
         i = env.iteration
         if i % period == 0 or i + 1 == env.begin_iteration or i + 1 == env.end_iteration:
             msg = '\t'.join([_fmt_metric(x, show_stdv) for x in env.evaluation_result_list])
-            rabit.tracker_print('[%d]\t%s\n' % (i, msg))
+            rabit.tracker_print(f"{i}\t{msg}\n")
     return callback
 
 
@@ -165,9 +165,7 @@ def early_stop(stopping_rounds, maximize=False, verbose=True):
     If there's more than one, will use the last.
     Returns the model from the last iteration (not the best one).
     If early stopping occurs, the model will have three additional fields:
-    ``bst.best_score``, ``bst.best_iteration`` and ``bst.best_ntree_limit``.
-    (Use ``bst.best_ntree_limit`` to get the correct value if ``num_parallel_tree``
-    and/or ``num_class`` appears in the parameters)
+    ``bst.best_score``, ``bst.best_iteration``.
 
     Parameters
     ----------
@@ -219,9 +217,11 @@ def early_stop(stopping_rounds, maximize=False, verbose=True):
             state['best_score'] = float('-inf')
         else:
             state['best_score'] = float('inf')
+        # pylint: disable=consider-using-f-string
         msg = '[%d]\t%s' % (
             env.iteration,
-            '\t'.join([_fmt_metric(x) for x in env.evaluation_result_list]))
+            '\t'.join([_fmt_metric(x) for x in env.evaluation_result_list])
+        )
         state['best_msg'] = msg
 
         if bst is not None:
@@ -245,6 +245,7 @@ def early_stop(stopping_rounds, maximize=False, verbose=True):
         maximize_score = state['maximize_score']
         if (maximize_score and score > best_score) or \
                 (not maximize_score and score < best_score):
+            # pylint: disable=consider-using-f-string
             msg = '[%d]\t%s' % (
                 env.iteration,
                 '\t'.join([_fmt_metric(x) for x in env.evaluation_result_list]))
@@ -276,6 +277,9 @@ class TrainingCallback(ABC):
     .. versionadded:: 1.3.0
 
     '''
+
+    EvalsLog = Dict[str, Dict[str, Union[List[float], List[Tuple[float, float]]]]]
+
     def __init__(self):
         pass
 
@@ -287,13 +291,11 @@ class TrainingCallback(ABC):
         '''Run after training is finished.'''
         return model
 
-    def before_iteration(self, model, epoch: int,
-                         evals_log: 'CallbackContainer.EvalsLog') -> bool:
+    def before_iteration(self, model, epoch: int, evals_log: EvalsLog) -> bool:
         '''Run before each iteration.  Return True when training should stop.'''
         return False
 
-    def after_iteration(self, model, epoch: int,
-                        evals_log: 'CallbackContainer.EvalsLog') -> bool:
+    def after_iteration(self, model, epoch: int, evals_log: EvalsLog) -> bool:
         '''Run after each iteration.  Return True when training should stop.'''
         return False
 
@@ -351,7 +353,7 @@ class CallbackContainer:
 
     '''
 
-    EvalsLog = Dict[str, Dict[str, Union[List[float], List[Tuple[float, float]]]]]
+    EvalsLog = TrainingCallback.EvalsLog
 
     def __init__(self,
                  callbacks: List[TrainingCallback],
@@ -364,7 +366,7 @@ class CallbackContainer:
                 ' will invoke monitor automatically.'
             assert callable(metric), msg
         self.metric = metric
-        self.history: CallbackContainer.EvalsLog = collections.OrderedDict()
+        self.history: TrainingCallback.EvalsLog = collections.OrderedDict()
         self.is_cv = is_cv
 
         if self.is_cv:
@@ -486,25 +488,46 @@ class EarlyStopping(TrainingCallback):
         Whether to maximize evaluation metric.  None means auto (discouraged).
     save_best
         Whether training should return the best model or the last model.
+    min_delta
+        Minimum absolute change in score to be qualified as an improvement.
+
+        .. versionadded:: 1.5.0
+
+        .. code-block:: python
+
+            clf = xgboost.XGBClassifier(tree_method="gpu_hist")
+            es = xgboost.callback.EarlyStopping(
+                rounds=2,
+                abs_tol=1e-3,
+                save_best=True,
+                maximize=False,
+                data_name="validation_0",
+                metric_name="mlogloss",
+            )
+
+            X, y = load_digits(return_X_y=True)
+            clf.fit(X, y, eval_set=[(X, y)], callbacks=[es])
     """
-    def __init__(self,
-                 rounds: int,
-                 metric_name: Optional[str] = None,
-                 data_name: Optional[str] = None,
-                 maximize: Optional[bool] = None,
-                 save_best: Optional[bool] = False) -> None:
+    def __init__(
+        self,
+        rounds: int,
+        metric_name: Optional[str] = None,
+        data_name: Optional[str] = None,
+        maximize: Optional[bool] = None,
+        save_best: Optional[bool] = False,
+        min_delta: float = 0.0
+    ) -> None:
         self.data = data_name
         self.metric_name = metric_name
         self.rounds = rounds
         self.save_best = save_best
         self.maximize = maximize
-        self.stopping_history: CallbackContainer.EvalsLog = {}
+        self.stopping_history: TrainingCallback.EvalsLog = {}
+        self._min_delta = min_delta
+        if self._min_delta < 0:
+            raise ValueError("min_delta must be greater or equal to 0.")
 
-        if self.maximize is not None:
-            if self.maximize:
-                self.improve_op = lambda x, y: x > y
-            else:
-                self.improve_op = lambda x, y: x < y
+        self.improve_op = None
 
         self.current_rounds: int = 0
         self.best_scores: dict = {}
@@ -516,17 +539,34 @@ class EarlyStopping(TrainingCallback):
         return model
 
     def _update_rounds(self, score, name, metric, model, epoch) -> bool:
-        # Just to be compatibility with old behavior before 1.3.  We should let
-        # user to decide.
+        def get_s(x):
+            """get score if it's cross validation history."""
+            return x[0] if isinstance(x, tuple) else x
+
+        def maximize(new, best):
+            """New score should be greater than the old one."""
+            return numpy.greater(get_s(new) - self._min_delta, get_s(best))
+
+        def minimize(new, best):
+            """New score should be smaller than the old one."""
+            return numpy.greater(get_s(best) - self._min_delta, get_s(new))
+
         if self.maximize is None:
+            # Just to be compatibility with old behavior before 1.3.  We should let
+            # user to decide.
             maximize_metrics = ('auc', 'aucpr', 'map', 'ndcg', 'auc@',
                                 'aucpr@', 'map@', 'ndcg@')
-            if any(metric.startswith(x) for x in maximize_metrics):
-                self.improve_op = lambda x, y: x > y
+            if metric != 'mape' and any(metric.startswith(x) for x in maximize_metrics):
                 self.maximize = True
             else:
-                self.improve_op = lambda x, y: x < y
                 self.maximize = False
+
+        if self.maximize:
+            self.improve_op = maximize
+        else:
+            self.improve_op = minimize
+
+        assert self.improve_op
 
         if not self.stopping_history:  # First round
             self.current_rounds = 0
@@ -552,7 +592,7 @@ class EarlyStopping(TrainingCallback):
         return False
 
     def after_iteration(self, model, epoch: int,
-                        evals_log: CallbackContainer.EvalsLog) -> bool:
+                        evals_log: TrainingCallback.EvalsLog) -> bool:
         epoch += self.starting_round  # training continuation
         msg = 'Must have at least 1 validation dataset for early stopping.'
         assert len(evals_log.keys()) >= 1, msg
@@ -616,15 +656,17 @@ class EvaluationMonitor(TrainingCallback):
         self._latest: Optional[str] = None
         super().__init__()
 
-    def _fmt_metric(self, data, metric, score, std) -> str:
+    def _fmt_metric(
+        self, data: str, metric: str, score: float, std: Optional[float]
+    ) -> str:
         if std is not None and self.show_stdv:
-            msg = '\t{0}:{1:.5f}+{2:.5f}'.format(data + '-' + metric, score, std)
+            msg = f"\t{data + '-' + metric}:{score:.5f}+{std:.5f}"
         else:
-            msg = '\t{0}:{1:.5f}'.format(data + '-' + metric, score)
+            msg = f"\t{data + '-' + metric}:{score:.5f}"
         return msg
 
     def after_iteration(self, model, epoch: int,
-                        evals_log: CallbackContainer.EvalsLog) -> bool:
+                        evals_log: TrainingCallback.EvalsLog) -> bool:
         if not evals_log:
             return False
 
@@ -686,7 +728,7 @@ class TrainingCheckPoint(TrainingCallback):
         super().__init__()
 
     def after_iteration(self, model, epoch: int,
-                        evals_log: CallbackContainer.EvalsLog) -> bool:
+                        evals_log: TrainingCallback.EvalsLog) -> bool:
         if self._epoch == self._iterations:
             path = os.path.join(self._path, self._name + '_' + str(epoch) +
                                 ('.pkl' if self._as_pickle else '.json'))

@@ -30,8 +30,6 @@ struct GenericParameter : public XGBoostParameter<GenericParameter> {
   int gpu_id;
   // fail when gpu_id is invalid
   bool fail_on_invalid_gpu_id {false};
-  // gpu page size in external memory mode, 0 means using the default.
-  size_t gpu_page_size;
   bool validate_parameters {false};
 
   // primary oneAPI device, -1 means default device
@@ -50,6 +48,10 @@ struct GenericParameter : public XGBoostParameter<GenericParameter> {
    * \param require_gpu  Whether GPU is explicitly required from user.
    */
   void ConfigureGpuId(bool require_gpu);
+  /*!
+   * Return automatically chosen threads.
+   */
+  int32_t Threads() const;
 
   // declare parameters
   DMLC_DECLARE_PARAMETER(GenericParameter) {
@@ -73,10 +75,6 @@ struct GenericParameter : public XGBoostParameter<GenericParameter> {
     DMLC_DECLARE_FIELD(fail_on_invalid_gpu_id)
         .set_default(false)
         .describe("Fail with error when gpu_id is invalid.");
-    DMLC_DECLARE_FIELD(gpu_page_size)
-        .set_default(0)
-        .set_lower_bound(0)
-        .describe("GPU page size when running in external memory mode.");
     DMLC_DECLARE_FIELD(validate_parameters)
         .set_default(false)
         .describe("Enable checking whether parameters are used or not.");
@@ -92,10 +90,6 @@ struct GenericParameter : public XGBoostParameter<GenericParameter> {
         .set_lower_bound(-1)
         .describe("The primary oneAPI device ordinal.");
   }
-
- private:
-  // number of devices to use (deprecated).
-  int n_gpus {0};  // NOLINT
 };
 }  // namespace xgboost
 

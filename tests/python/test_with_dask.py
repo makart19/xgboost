@@ -21,6 +21,7 @@ from hypothesis import given, settings, note, HealthCheck
 from test_updaters import hist_parameter_strategy, exact_parameter_strategy
 from test_with_sklearn import run_feature_weights, run_data_initialization
 from test_predict import verify_leaf_output
+from sklearn.datasets import make_regression
 
 if sys.platform.startswith("win"):
     pytest.skip("Skipping dask tests on Windows", allow_module_level=True)
@@ -28,7 +29,6 @@ if tm.no_dask()['condition']:
     pytest.skip(msg=tm.no_dask()['reason'], allow_module_level=True)
 
 from distributed import LocalCluster, Client
-from distributed.utils_test import client, loop, cluster_fixture
 import dask.dataframe as dd
 import dask.array as da
 from xgboost.dask import DaskDMatrix
@@ -38,6 +38,20 @@ if hasattr(HealthCheck, 'function_scoped_fixture'):
     suppress = [HealthCheck.function_scoped_fixture]
 else:
     suppress = hypothesis.utils.conventions.not_set  # type:ignore
+
+
+@pytest.fixture(scope='module')
+def cluster():
+    with LocalCluster(
+        n_workers=2, threads_per_worker=2, dashboard_address=None
+    ) as dask_cluster:
+        yield dask_cluster
+
+
+@pytest.fixture
+def client(cluster):
+    with Client(cluster) as dask_client:
+        yield dask_client
 
 
 kRows = 1000
@@ -99,6 +113,12 @@ def test_from_dask_dataframe() -> None:
             assert isinstance(series_predictions, dd.Series)
             np.testing.assert_allclose(series_predictions.compute().values,
                                        from_dmatrix)
+
+            # Make sure the output can be integrated back to original dataframe
+            X["predict"] = prediction
+            X["inplace_predict"] = series_predictions
+
+            assert bool(X.isnull().values.any().compute()) is False
 
 
 def test_from_dask_array() -> None:
@@ -165,6 +185,9 @@ def test_dask_predict_shape_infer(client: "Client") -> None:
 def run_boost_from_prediction(
     X: xgb.dask._DaskCollection, y: xgb.dask._DaskCollection, tree_method: str, client: "Client"
 ) -> None:
+    X = client.persist(X)
+    y = client.persist(y)
+
     model_0 = xgb.dask.DaskXGBClassifier(
         learning_rate=0.3, random_state=0, n_estimators=4,
         tree_method=tree_method)
@@ -946,6 +969,39 @@ def test_dask_predict_leaf(booster: str, client: "Client") -> None:
     verify_leaf_output(leaf, num_parallel_tree)
 
 
+def test_dask_iteration_range(client: "Client"):
+    X, y, _ = generate_array()
+    n_rounds = 10
+
+    Xy = xgb.DMatrix(X.compute(), y.compute())
+
+    dXy = xgb.dask.DaskDMatrix(client, X, y)
+    booster = xgb.dask.train(
+        client, {"tree_method": "hist"}, dXy, num_boost_round=n_rounds
+    )["booster"]
+
+    for i in range(0, n_rounds):
+        iter_range = (0, i)
+        native_predt = booster.predict(Xy, iteration_range=iter_range)
+
+        with_dask_dmatrix = xgb.dask.predict(
+            client, booster, dXy, iteration_range=iter_range
+        )
+        with_dask_collection = xgb.dask.predict(
+            client, booster, X, iteration_range=iter_range
+        )
+        with_inplace = xgb.dask.inplace_predict(
+            client, booster, X, iteration_range=iter_range
+        )
+        np.testing.assert_allclose(native_predt, with_dask_dmatrix.compute())
+        np.testing.assert_allclose(native_predt, with_dask_collection.compute())
+        np.testing.assert_allclose(native_predt, with_inplace.compute())
+
+    full_predt = xgb.dask.predict(client, booster, X, iteration_range=(0, n_rounds))
+    default = xgb.dask.predict(client, booster, X)
+    np.testing.assert_allclose(full_predt.compute(), default.compute())
+
+
 class TestWithDask:
     @pytest.mark.parametrize('config_key,config_value', [('verbosity', 0), ('use_rmm', True)])
     def test_global_config(
@@ -1437,6 +1493,61 @@ def test_parallel_submits(client: "Client") -> None:
     assert len(classifiers) == n_submits
     for i, cls in enumerate(classifiers):
         assert cls.get_booster().num_boosted_rounds() == i + 1
+
+
+def run_tree_stats(client: Client, tree_method: str) -> str:
+    """assert that different workers count dosn't affect summ statistic's on root"""
+
+    def dask_train(X, y, num_obs, num_features):
+        chunk_size = 100
+        X = da.from_array(X, chunks=(chunk_size, num_features))
+        y = da.from_array(y.reshape(num_obs, 1), chunks=(chunk_size, 1))
+        dtrain = xgb.dask.DaskDMatrix(client, X, y)
+
+        output = xgb.dask.train(
+            client,
+            {
+                "verbosity": 0,
+                "tree_method": tree_method,
+                "objective": "reg:squarederror",
+                "max_depth": 3,
+            },
+            dtrain,
+            num_boost_round=1,
+        )
+        dump_model = output["booster"].get_dump(with_stats=True, dump_format="json")[0]
+        return json.loads(dump_model)
+
+    num_obs = 1000
+    num_features = 10
+    X, y = make_regression(num_obs, num_features, random_state=777)
+    model = dask_train(X, y, num_obs, num_features)
+
+    # asserts children have correct cover.
+    stack = [model]
+    while stack:
+        node: dict = stack.pop()
+        if "leaf" in node.keys():
+            continue
+        cover = 0
+        for c in node["children"]:
+            cover += c["cover"]
+            stack.append(c)
+        assert cover == node["cover"]
+
+    return model["cover"]
+
+
+@pytest.mark.parametrize("tree_method", ["hist", "approx"])
+def test_tree_stats(tree_method: str) -> None:
+    with LocalCluster(n_workers=1) as cluster:
+        with Client(cluster) as client:
+            local = run_tree_stats(client, tree_method)
+    with LocalCluster(n_workers=2) as cluster:
+        with Client(cluster) as client:
+            distributed = run_tree_stats(client, tree_method)
+
+    assert local == distributed
 
 
 def test_parallel_submit_multi_clients() -> None:

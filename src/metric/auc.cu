@@ -20,10 +20,7 @@ namespace xgboost {
 namespace metric {
 namespace {
 template <typename T>
-class Discard : public thrust::discard_iterator<T>  {
- public:
-  using value_type = T;  // NOLINT
-};
+using Discard = thrust::discard_iterator<T>;
 
 struct GetWeightOp {
   common::Span<float const> weights;
@@ -76,7 +73,7 @@ struct DeviceAUCCache {
  *
  * - Run scan to obtain TP/FP values, which are right coordinates of trapesoid.
  * - Find distinct prediction values and get the corresponding FP_PREV/TP_PREV value,
- *   which are left coordinates of trapesoid.
+ *   which are left coordinates of trapesoids.
  * - Reduce the scan array into 1 AUC value.
  */
 std::tuple<float, float, float>
@@ -118,12 +115,12 @@ GPUBinaryAUC(common::Span<float const> predts, MetaInfo const &info,
     return thrust::make_pair(fp, tp);
   };  // NOLINT
   auto d_fptp = dh::ToSpan(cache->fptp);
-  dh::LaunchN(device, d_sorted_idx.size(),
+  dh::LaunchN(d_sorted_idx.size(),
               [=] __device__(size_t i) { d_fptp[i] = get_fp_tp(i); });
 
   dh::XGBDeviceAllocator<char> alloc;
   auto d_unique_idx = dh::ToSpan(cache->unique_idx);
-  dh::Iota(d_unique_idx, device);
+  dh::Iota(d_unique_idx);
 
   auto uni_key = dh::MakeTransformIterator<float>(
       thrust::make_counting_iterator(0),
@@ -144,7 +141,7 @@ GPUBinaryAUC(common::Span<float const> predts, MetaInfo const &info,
   auto d_neg_pos = dh::ToSpan(cache->neg_pos);
   // scatter unique negaive/positive values
   // shift to right by 1 with initial value being 0
-  dh::LaunchN(device, d_unique_idx.size(), [=] __device__(size_t i) {
+  dh::LaunchN(d_unique_idx.size(), [=] __device__(size_t i) {
     if (d_unique_idx[i] == 0) {  // first unique index is 0
       assert(i == 0);
       d_neg_pos[0] = {0, 0};
@@ -153,7 +150,7 @@ GPUBinaryAUC(common::Span<float const> predts, MetaInfo const &info,
     d_neg_pos[d_unique_idx[i]] = d_fptp[d_unique_idx[i] - 1];
     if (i == d_unique_idx.size() - 1) {
       // last one needs to be included, may override above assignment if the last
-      // prediction value is district from previous one.
+      // prediction value is distinct from previous one.
       d_neg_pos.back() = d_fptp[d_unique_idx[i] - 1];
       return;
     }
@@ -183,7 +180,7 @@ void Transpose(common::Span<float const> in, common::Span<float> out, size_t m,
                size_t n, int32_t device) {
   CHECK_EQ(in.size(), out.size());
   CHECK_EQ(in.size(), m * n);
-  dh::LaunchN(device, in.size(), [=] __device__(size_t i) {
+  dh::LaunchN(in.size(), [=] __device__(size_t i) {
     size_t col = i / m;
     size_t row = i % m;
     size_t idx = row * n + col;
@@ -255,9 +252,8 @@ float GPUMultiClassAUCOVR(common::Span<float const> predts, MetaInfo const &info
   if (n_samples == 0) {
     dh::TemporaryArray<float> resutls(n_classes * 4, 0.0f);
     auto d_results = dh::ToSpan(resutls);
-    dh::LaunchN(device, n_classes * 4, [=]__device__(size_t i) {
-      d_results[i] = 0.0f;
-    });
+    dh::LaunchN(n_classes * 4,
+                [=] __device__(size_t i) { d_results[i] = 0.0f; });
     auto local_area = d_results.subspan(0, n_classes);
     auto fp = d_results.subspan(n_classes, n_classes);
     auto tp = d_results.subspan(2 * n_classes, n_classes);
@@ -273,9 +269,8 @@ float GPUMultiClassAUCOVR(common::Span<float const> predts, MetaInfo const &info
 
   dh::TemporaryArray<uint32_t> class_ptr(n_classes + 1, 0);
   auto d_class_ptr = dh::ToSpan(class_ptr);
-  dh::LaunchN(device, n_classes + 1, [=]__device__(size_t i) {
-    d_class_ptr[i] = i * n_samples;
-  });
+  dh::LaunchN(n_classes + 1,
+              [=] __device__(size_t i) { d_class_ptr[i] = i * n_samples; });
   // no out-of-place sort for thrust, cub sort doesn't accept general iterator. So can't
   // use transform iterator in sorting.
   auto d_sorted_idx = dh::ToSpan(cache->sorted_idx);
@@ -296,12 +291,12 @@ float GPUMultiClassAUCOVR(common::Span<float const> predts, MetaInfo const &info
     // labels is a vector of size n_samples.
     float label = labels[idx % n_samples] == class_id;
 
-    float w = get_weight(i % n_samples);
+    float w = weights.empty() ? 1.0f : weights[d_sorted_idx[i] % n_samples];
     float fp = (1.0 - label) * w;
     float tp = label * w;
     return thrust::make_pair(fp, tp);
   };  // NOLINT
-  dh::LaunchN(device, d_sorted_idx.size(),
+  dh::LaunchN(d_sorted_idx.size(),
               [=] __device__(size_t i) { d_fptp[i] = get_fp_tp(i); });
 
   /**
@@ -309,7 +304,7 @@ float GPUMultiClassAUCOVR(common::Span<float const> predts, MetaInfo const &info
    */
   dh::XGBDeviceAllocator<char> alloc;
   auto d_unique_idx = dh::ToSpan(cache->unique_idx);
-  dh::Iota(d_unique_idx, device);
+  dh::Iota(d_unique_idx);
   auto uni_key = dh::MakeTransformIterator<thrust::pair<uint32_t, float>>(
       thrust::make_counting_iterator(0), [=] __device__(size_t i) {
         uint32_t class_id = i / n_samples;
@@ -336,24 +331,25 @@ float GPUMultiClassAUCOVR(common::Span<float const> predts, MetaInfo const &info
   // expand to tuple to include class id
   auto fptp_it_in = dh::MakeTransformIterator<Triple>(
       thrust::make_counting_iterator(0), [=] __device__(size_t i) {
-        uint32_t class_id = i / n_samples;
-        return thrust::make_tuple(class_id, d_fptp[i].first, d_fptp[i].second);
+        return thrust::make_tuple(i, d_fptp[i].first, d_fptp[i].second);
       });
   // shrink down to pair
   auto fptp_it_out = thrust::make_transform_output_iterator(
-      dh::tbegin(d_fptp), [=] __device__(Triple const &t) {
-        return thrust::make_pair(thrust::get<1>(t), thrust::get<2>(t));
+      dh::TypedDiscard<Triple>{}, [d_fptp] __device__(Triple const &t) {
+        d_fptp[thrust::get<0>(t)] =
+            thrust::make_pair(thrust::get<1>(t), thrust::get<2>(t));
+        return t;
       });
   dh::InclusiveScan(
       fptp_it_in, fptp_it_out,
       [=] __device__(Triple const &l, Triple const &r) {
-        uint32_t l_cid = thrust::get<0>(l);
-        uint32_t r_cid = thrust::get<0>(r);
+        uint32_t l_cid = thrust::get<0>(l) / n_samples;
+        uint32_t r_cid = thrust::get<0>(r) / n_samples;
         if (l_cid != r_cid) {
           return r;
         }
 
-        return Triple(r_cid,                                   // class_id
+        return Triple(thrust::get<0>(r),
                       thrust::get<1>(l) + thrust::get<1>(r),   // fp
                       thrust::get<2>(l) + thrust::get<2>(r));  // tp
       },
@@ -363,7 +359,7 @@ float GPUMultiClassAUCOVR(common::Span<float const> predts, MetaInfo const &info
   auto d_neg_pos = dh::ToSpan(cache->neg_pos);
   // When dataset is not empty, each class must have at least 1 (unique) sample
   // prediction, so no need to handle special case.
-  dh::LaunchN(device, d_unique_idx.size(), [=]__device__(size_t i) {
+  dh::LaunchN(d_unique_idx.size(), [=] __device__(size_t i) {
     if (d_unique_idx[i] % n_samples == 0) {  // first unique index is 0
       assert(d_unique_idx[i] % n_samples == 0);
       d_neg_pos[d_unique_idx[i]] = {0, 0};   // class_id * n_samples = i
@@ -419,7 +415,7 @@ float GPUMultiClassAUCOVR(common::Span<float const> predts, MetaInfo const &info
   auto tp = d_results.subspan(2 * n_classes, n_classes);
   auto auc = d_results.subspan(3 * n_classes, n_classes);
 
-  dh::LaunchN(device, n_classes, [=] __device__(size_t c) {
+  dh::LaunchN(n_classes, [=] __device__(size_t c) {
     auc[c] = s_d_auc[c];
     auto last = d_fptp[n_samples * c + (n_samples - 1)];
     fp[c] = last.first;
@@ -526,7 +522,7 @@ GPURankingAUC(common::Span<float const> predts, MetaInfo const &info,
   dh::TemporaryArray<float> d_auc(group_ptr.size() - 1);
   auto s_d_auc = dh::ToSpan(d_auc);
   auto out = thrust::make_transform_output_iterator(
-      Discard<RankScanItem>(), [=] __device__(RankScanItem const &item) -> RankScanItem {
+      dh::TypedDiscard<RankScanItem>{}, [=] __device__(RankScanItem const &item) -> RankScanItem {
         auto group_id = item.group_id;
         assert(group_id < d_group_ptr.size());
         auto data_group_begin = d_group_ptr[group_id];

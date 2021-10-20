@@ -103,7 +103,9 @@ def _train_internal(params, dtrain,
         # Due to compatibility with version older than 1.4, these attributes are added
         # to Python object even if early stopping is not used.
         bst.best_iteration = bst.num_boosted_rounds() - 1
+        bst.set_attr(best_iteration=str(bst.best_iteration))
         bst.best_ntree_limit = (bst.best_iteration + 1) * num_parallel_tree
+        bst.set_attr(best_ntree_limit=str(bst.best_ntree_limit))
 
     # Copy to serialise and unserialise booster to reset state and free
     # training memory
@@ -144,10 +146,7 @@ def train(params, dtrain, num_boost_round=10, evals=(), obj=None, feval=None,
         If there's more than one metric in the **eval_metric** parameter given in
         **params**, the last metric will be used for early stopping.
         If early stopping occurs, the model will have three additional fields:
-        ``bst.best_score``, ``bst.best_iteration`` and ``bst.best_ntree_limit``.  Use
-        ``bst.best_ntree_limit`` to get the correct value if ``num_parallel_tree`` and/or
-        ``num_class`` appears in the parameters.  ``best_ntree_limit`` is the result of
-        ``num_parallel_tree * best_iteration``.
+        ``bst.best_score``, ``bst.best_iteration``.
     evals_result: dict
         This dictionary stores the evaluation results of all the items in watchlist.
 
@@ -473,13 +472,15 @@ def cv(params, dtrain, num_boost_round=10, nfold=3, stratified=False, folds=None
     if is_new_callback:
         assert all(isinstance(c, callback.TrainingCallback)
                    for c in callbacks), "You can't mix new and old callback styles."
-        if isinstance(verbose_eval, bool) and verbose_eval:
+        if verbose_eval:
             verbose_eval = 1 if verbose_eval is True else verbose_eval
-            callbacks.append(callback.EvaluationMonitor(period=verbose_eval,
-                                                        show_stdv=show_stdv))
+            callbacks.append(
+                callback.EvaluationMonitor(period=verbose_eval, show_stdv=show_stdv)
+            )
         if early_stopping_rounds:
-            callbacks.append(callback.EarlyStopping(
-                rounds=early_stopping_rounds, maximize=maximize))
+            callbacks.append(
+                callback.EarlyStopping(rounds=early_stopping_rounds, maximize=maximize)
+            )
         callbacks = callback.CallbackContainer(callbacks, metric=feval, is_cv=True)
     else:
         callbacks = _configure_deprecated_callbacks(
@@ -505,7 +506,7 @@ def cv(params, dtrain, num_boost_round=10, nfold=3, stratified=False, folds=None
             results[key + '-std'].append(std)
 
         if should_break:
-            for k in results:
+            for k in results.keys():  # pylint: disable=consider-iterating-dictionary
                 results[k] = results[k][:(booster.best_iteration + 1)]
             break
     if as_pandas:

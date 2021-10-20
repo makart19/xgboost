@@ -99,6 +99,8 @@ eval[test] = {data_path}
             # CLI model doesn't contain feature info.
             booster.feature_names = None
             booster.feature_types = None
+            booster.set_attr(best_iteration=None)
+            booster.set_attr(best_ntree_limit=None)
 
             booster.save_model(model_out_py)
             py_predt = booster.predict(data)
@@ -129,7 +131,7 @@ eval[test] = {data_path}
         msg = completed.stdout.decode('utf-8')
         assert msg.find('XGBoost') != -1
         v = xgboost.__version__
-        if v.find('SNAPSHOT') != -1:
+        if v.find('dev') != -1:
             assert msg.split(':')[1].strip() == v.split('-')[0]
         elif v.find('rc') != -1:
             assert msg.split(':')[1].strip() == v.split('rc')[0]

@@ -40,37 +40,34 @@ on a dask cluster:
 
 .. code-block:: python
 
-  import xgboost as xgb
-  import dask.array as da
-  import dask.distributed
+    import xgboost as xgb
+    import dask.array as da
+    import dask.distributed
 
-  cluster = dask.distributed.LocalCluster(n_workers=4, threads_per_worker=1)
-  client = dask.distributed.Client(cluster)
+    if __name__ == "__main__":
+        cluster = dask.distributed.LocalCluster()
+        client = dask.distributed.Client(cluster)
 
-  # X and y must be Dask dataframes or arrays
-  num_obs = 1e5
-  num_features = 20
-  X = da.random.random(
-      size=(num_obs, num_features),
-      chunks=(1000, num_features)
-  )
-  y = da.random.random(
-      size=(num_obs, 1),
-      chunks=(1000, 1)
-  )
+        # X and y must be Dask dataframes or arrays
+        num_obs = 1e5
+        num_features = 20
+        X = da.random.random(size=(num_obs, num_features), chunks=(1000, num_features))
+        y = da.random.random(size=(num_obs, 1), chunks=(1000, 1))
 
-  dtrain = xgb.dask.DaskDMatrix(client, X, y)
+        dtrain = xgb.dask.DaskDMatrix(client, X, y)
 
-  output = xgb.dask.train(client,
-                          {'verbosity': 2,
-                           'tree_method': 'hist',
-                           'objective': 'reg:squarederror'
-                           },
-                          dtrain,
-                          num_boost_round=4, evals=[(dtrain, 'train')])
+        output = xgb.dask.train(
+            client,
+            {"verbosity": 2, "tree_method": "hist", "objective": "reg:squarederror"},
+            dtrain,
+            num_boost_round=4,
+            evals=[(dtrain, "train")],
+        )
 
 Here we first create a cluster in single-node mode with ``dask.distributed.LocalCluster``, then
-connect a ``dask.distributed.Client`` to this cluster, setting up an environment for later computation.
+connect a ``dask.distributed.Client`` to this cluster, setting up an environment for later
+computation.  Notice that the cluster construction is guared by ``__name__ == "__main__"``, which is
+necessary otherwise there might be obscure errors.
 
 We then create a ``DaskDMatrix`` object and pass it to ``train``, along with some other parameters,
 much like XGBoost's normal, non-dask interface. Unlike that interface, ``data`` and ``label`` must
@@ -115,8 +112,8 @@ See next section for details.
 Alternatively, XGBoost also implements the Scikit-Learn interface with
 ``DaskXGBClassifier``, ``DaskXGBRegressor``, ``DaskXGBRanker`` and 2 random forest
 variances.  This wrapper is similar to the single node Scikit-Learn interface in xgboost,
-with dask collection as inputs and has an additional ``client`` attribute.  See
-``xgboost/demo/dask`` for more examples.
+with dask collection as inputs and has an additional ``client`` attribute.  See following
+sections and ``xgboost/demo/dask`` for more examples.
 
 
 ******************
@@ -127,7 +124,7 @@ In previous example we used ``DaskDMatrix`` as input to ``predict`` function.  I
 practice, it's also possible to call ``predict`` function directly on dask collections
 like ``Array`` and ``DataFrame`` and might have better prediction performance.  When
 ``DataFrame`` is used as prediction input, the result is a dask ``Series`` instead of
-array.  Also, there's inplace predict support on dask interface, which can help reducing
+array.  Also, there's in-place predict support on dask interface, which can help reducing
 both memory usage and prediction time.
 
 .. code-block:: python
@@ -176,7 +173,7 @@ One simple optimization for running consecutive predictions is using
         shap_f = xgb.dask.predict(client, booster_f, X, pred_contribs=True)
         futures.append(shap_f)
 
-  results = client.gather(futures)
+    results = client.gather(futures)
 
 
 This is only available on functional interface, as the Scikit-Learn wrapper doesn't know
@@ -189,6 +186,38 @@ Scikit-Learn wrapper object:
     cls.fit(X, y)
 
     booster = cls.get_booster()
+
+
+**********************
+Scikit-Learn interface
+**********************
+
+As mentioned previously, there's another interface that mimics the scikit-learn estimators
+with higher level of of abstraction.  The interface is easier to use compared to the
+functional interface but with more constraints.  It's worth mentioning that, although the
+interface mimics scikit-learn estimators, it doesn't work with normal scikit-learn
+utilities like ``GridSearchCV`` as scikit-learn doesn't understand distributed dask data
+collection.
+
+
+.. code-block:: python
+
+    from distributed import LocalCluster, Client
+    import xgboost as xgb
+
+
+    def main(client: Client) -> None:
+        X, y = load_data()
+        clf = xgb.dask.DaskXGBClassifier(n_estimators=100, tree_method="hist")
+        clf.client = client  # assign the client
+        clf.fit(X, y, eval_set=[(X, y)])
+        proba = clf.predict_proba(X)
+
+
+    if __name__ == "__main__":
+        with LocalCluster() as cluster:
+            with Client(cluster) as client:
+                main(client)
 
 
 ***************************
@@ -479,7 +508,7 @@ Here are some pratices on reducing memory usage with dask and xgboost.
   ``xgboost.dask.DaskDeviceQuantileDMatrix`` as a drop in replacement for ``DaskDMatrix``
   to reduce overall memory usage.  See ``demo/dask/gpu_training.py`` for an example.
 
-- Use inplace prediction when possible.
+- Use in-place prediction when possible.
 
 References:
 
