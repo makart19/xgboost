@@ -320,16 +320,13 @@ TEST(QuantileHist, Partitioner) {
     {
       auto min_value = page.cut.MinValues()[split_ind];
       RegTree tree;
-      HistRowPartitioner partitioner{&ctx, page, column_indices, &tree, 8, false};
-      // HistRowPartitioner partitioner{n_samples, base_rowid, 1};
+      RowPartitioner partitioner{&ctx, page, column_indices, &tree, 8, false};
       GetSplit(&tree, min_value, &candidates);
 
       std::unordered_map<uint32_t, bool> smalest_nodes_mask;
       smalest_nodes_mask[2] = true;
-      // const std::vector<GradientPair> &gpair_h;
       const bool loss_guide = false;
       std::unordered_map<uint32_t, int32_t> split_conditions_;
-      // split_conditions_[0] = min_value;
       std::unordered_map<uint32_t, uint64_t> split_ind_;
       split_ind_[0] = split_ind;
       const size_t max_depth = 8;
@@ -360,11 +357,11 @@ TEST(QuantileHist, Partitioner) {
       ASSERT_EQ(result[2], assignments.size());
     }
     {
-      // HistRowPartitioner partitioner{n_samples, base_rowid, 1};
+      // RowPartitioner partitioner{n_samples, base_rowid, 1};
       auto ptr = page.cut.Ptrs()[split_ind + 1];
       float split_value = page.cut.Values().at(ptr / 2);
       RegTree tree;
-      HistRowPartitioner partitioner{&ctx, page, column_indices, &tree, 8, false};
+      RowPartitioner partitioner{&ctx, page, column_indices, &tree, 8, false};
       GetSplit(&tree, split_value, &candidates);
       auto left_nidx = tree[RegTree::kRoot].LeftChild();
 

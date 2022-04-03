@@ -16,6 +16,7 @@ TEST(Approx, Partitioner) {
   GenericParameter ctx;
   ctx.InitAllowUnknown(Args{});
   std::unordered_map<uint32_t, CPUExpandEntry> candidates;
+  std::vector<CPUExpandEntry> candidates_vec(1, {0, 0, 0.4});
   candidates[0] = {0, 0, 0.4};
 
   auto grad = GenerateRandomGradients(n_samples);
@@ -35,7 +36,7 @@ TEST(Approx, Partitioner) {
           /*right_sum=*/0.0f);
       common::ColumnMatrix column_matrix;
       column_matrix.Init(page, 1, 1);
-      ApproxRowPartitioner partitioner(&ctx, page, column_matrix, &tree, 2, false);
+      RowPartitioner partitioner(&ctx, page, column_matrix, &tree, 2, false);
       candidates[0].split.split_value = min_value;
       candidates[0].split.sindex = 0;
       candidates[0].split.sindex |= (1U << 31);
@@ -44,10 +45,17 @@ TEST(Approx, Partitioner) {
       std::vector<uint16_t> cnodes;
       cnodes.resize(1 << (4), 0);
       cnodes[1] = 1;
-      // nodes.resize(1 << (4), 0);
       nodes[0] = 1;
       nodes[1] = 2;
-      partitioner.UpdatePosition(&ctx, page, &candidates, &tree, &mask, &nodes, cnodes, 0);
+      candidates_vec[0].split.split_value = min_value;
+      candidates_vec[0].split.sindex = 0;
+      candidates_vec[0].split.sindex |= (1U << 31);
+      std::unordered_map<uint32_t, int32_t> split_conditions_;
+      std::unordered_map<uint32_t, uint64_t> split_ind_;
+      partitioner.UpdatePosition<false, uint8_t, false, false>(&ctx, page,
+        column_matrix, candidates_vec,
+        &tree, 0, &mask, false, &split_conditions_, &split_ind_, 2, &cnodes,
+        &nodes, true, false);
 
       auto const & assignments = partitioner.GetNodeAssignments();
       std::vector<size_t> result(3, 0);
@@ -57,31 +65,12 @@ TEST(Approx, Partitioner) {
       }
       ASSERT_EQ(result[1], 0);
       ASSERT_EQ(result[2], n_samples);
-// >>>>>>> a20b4d1a... partition optimizations
     }
     {
-      // ApproxRowPartitioner partitioner{n_samples, base_rowid};
       auto ptr = page.cut.Ptrs()[split_ind + 1];
       float split_value = page.cut.Values().at(ptr / 2);
       RegTree tree;
-// <<<<<<< HEAD
-//       GetSplit(&tree, split_value, &candidates);
-//       auto left_nidx = tree[RegTree::kRoot].LeftChild();
-//       partitioner.UpdatePosition(&ctx, page, candidates, &tree);
 
-//       auto elem = partitioner[left_nidx];
-//       ASSERT_LT(elem.Size(), n_samples);
-//       ASSERT_GT(elem.Size(), 1);
-//       for (auto it = elem.begin; it != elem.end; ++it) {
-//         auto value = page.cut.Values().at(page.index[*it]);
-//         ASSERT_LE(value, split_value);
-//       }
-//       auto right_nidx = tree[RegTree::kRoot].RightChild();
-//       elem = partitioner[right_nidx];
-//       for (auto it = elem.begin; it != elem.end; ++it) {
-//         auto value = page.cut.Values().at(page.index[*it]);
-//         ASSERT_GT(value, split_value) << *it;
-// =======
       tree.ExpandNode(
           /*nid=*/RegTree::kRoot, /*split_index=*/split_ind,
           /*split_value=*/split_value,
@@ -90,7 +79,7 @@ TEST(Approx, Partitioner) {
           /*right_sum=*/0.0f);
       common::ColumnMatrix column_matrix;
       column_matrix.Init(page, 1, 1);
-      ApproxRowPartitioner partitioner(&ctx, page, column_matrix, &tree, 2, false);
+      RowPartitioner partitioner(&ctx, page, column_matrix, &tree, 2, false);
       candidates[0].split.split_value = split_value;
       candidates[0].split.sindex = 0;
       candidates[0].split.sindex |= (1U << 31);
@@ -101,8 +90,16 @@ TEST(Approx, Partitioner) {
       cnodes[1] = 1;
       nodes[0] = 1;
       nodes[1] = 2;
-      // partitioner.UpdatePosition(&ctx, page, candidates, &tree, mask, nodes, nodes, 0);
-      partitioner.UpdatePosition(&ctx, page, &candidates, &tree, &mask, &nodes, cnodes, 0);
+      candidates_vec[0].split.split_value = split_value;
+      candidates_vec[0].split.sindex = 0;
+      candidates_vec[0].split.sindex |= (1U << 31);
+      std::unordered_map<uint32_t, int32_t> split_conditions_;
+      std::unordered_map<uint32_t, uint64_t> split_ind_;
+      partitioner.UpdatePosition<false, uint8_t, false, false>(&ctx, page,
+        column_matrix, candidates_vec,
+        &tree, 0, &mask, false, &split_conditions_, &split_ind_, 2, &cnodes,
+        &nodes, true, false);
+
       auto const & assignments = partitioner.GetNodeAssignments();
       size_t row_id = 0;
       for (auto node_id : assignments) {
@@ -113,7 +110,6 @@ TEST(Approx, Partitioner) {
           auto value = page.cut.Values().at(page.index[row_id++]);
           ASSERT_GT(value, split_value);          
         }
-// >>>>>>> a20b4d1a... partition optimizations
       }
     }
   }

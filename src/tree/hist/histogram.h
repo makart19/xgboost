@@ -114,7 +114,6 @@ template <typename GradientSumT, typename ExpandEntry> class HistogramBuilder {
                  std::vector<ExpandEntry> const &nodes_for_subtraction_trick,
                  std::vector<GradientPair> const &gpair,
                  const PartitionType* p_opt_partition_builder,
-                 // template?
                  std::vector<uint16_t>* p_node_ids,
                  const std::vector<std::vector<uint16_t>>* merged_thread_ids = nullptr) {
     int starting_index = std::numeric_limits<int>::max();

@@ -161,10 +161,6 @@ class OptPartitionBuilder {
         GetSparseColumnsRef<BinIdxType>()[fid] =
           dynamic_cast<const SparseColumn<BinIdxType>*>(GetColumnsRef<BinIdxType>()[fid].get());
       }
-      // for (size_t tid = 0; tid < nthreads; ++tid) {
-      //   states[tid].resize(1 << (max_depth + 1), 0);
-      //   default_flags[tid].resize(1 << (max_depth + 1), false);
-      // }
     }
     data_hash = reinterpret_cast<const uint8_t*>(column_matrix.GetIndexData());
     n_threads = nthreads;
@@ -196,108 +192,6 @@ class OptPartitionBuilder {
     node_id_for_threads.clear();
     nodes_count.clear();
     UpdateRootThreadWork();
-  }
-
-  template<typename Pred>
-  void PartitionRange(size_t tid, const size_t row_indices_begin,
-                      const size_t row_indices_end,
-                      uint16_t* nodes_ids, Pred pred,
-                      std::unordered_map<uint32_t, bool>* mask,
-                      std::unordered_map<uint32_t, uint16_t>* curr_level_nodes,
-                      bool is_loss_guided, size_t depth) {
-    uint32_t rows_count = 0;
-    uint32_t rows_left_count = 0;
-    uint32_t* rows = vec_rows[tid].data();
-    uint32_t* rows_left = nullptr;
-    if (is_loss_guided) {
-      rows_left = vec_rows_remain[tid].data();
-    }
-    const std::unordered_map<uint32_t, uint16_t>& curr_level_nodes_data = *curr_level_nodes;
-    for (size_t ii = row_indices_begin; ii < row_indices_end; ++ii) {
-      const uint32_t i = !is_loss_guided ? ii : row_indices_ptr[ii];
-      const uint32_t nid = nodes_ids[i];
-      if (((static_cast<uint16_t>(1) << 15) & nid) ||
-          (curr_level_nodes->find((uint32_t)(2*nid + 1)) == curr_level_nodes->end() ||
-           curr_level_nodes->find((uint32_t)(2*nid)) == curr_level_nodes->end()) ? true :
-           (*curr_level_nodes)[(uint32_t)(2*nid + 1)] == (*curr_level_nodes)[(uint32_t)(2*nid)]) {
-        continue;
-      }
-      const bool condition = pred(i);
-      const uint16_t new_nid = (*curr_level_nodes)[(const uint32_t)(2*nid +
-                                (const uint32_t)(!condition))];
-      nodes_ids[i] = new_nid;
-      const uint16_t check_node_id = (~(static_cast<uint16_t>(1) << 15)) & nodes_ids[i];
-      uint32_t inc = mask->find(check_node_id) != mask->end() ?
-                     static_cast<uint32_t>((*mask)[(const uint32_t)(check_node_id)]) : 0;
-      rows[1 + rows_count] = i;
-      rows_count += inc;
-      if (is_loss_guided) {
-        rows_left[1 + rows_left_count] = i;
-        rows_left_count += !static_cast<bool>(inc);
-      } else {
-        threads_nodes_count[tid][check_node_id] += inc;
-      }
-    }
-    rows[0] = rows_count;
-    if (is_loss_guided) {
-      rows_left[0] = rows_left_count;
-    }
-  }
-
-  template<typename Pred>
-  void PartitionRange(size_t tid, const size_t row_indices_begin,
-                      const size_t row_indices_end,
-                      uint16_t* nodes_ids, Pred pred,
-                      std::vector<bool>* mask,
-                      std::vector<uint16_t>* curr_level_nodes,
-                      bool is_loss_guided, size_t depth) {
-    uint32_t rows_count = 0;
-    uint32_t rows_left_count = 0;
-    uint32_t* rows = vec_rows[tid].data();
-    uint32_t* rows_left = nullptr;
-    if (is_loss_guided) {
-      rows_left = vec_rows_remain[tid].data();
-    }
-    if (!is_loss_guided) {
-      if (threads_nodes_count_vec[tid].size() < (1 << (depth + 2))) {
-        threads_nodes_count_vec[tid].resize(1 << (depth + 2), 0);
-      }
-    }
-    uint32_t* nodes_count = threads_nodes_count_vec[tid].data();
-    const std::vector<uint16_t>& curr_level_nodes_data = *curr_level_nodes;
-    const std::vector<bool>& mask_ref = *mask;
-    for (size_t ii = row_indices_begin; ii < row_indices_end; ++ii) {
-      const uint32_t i = !is_loss_guided ? ii : row_indices_ptr[ii];
-      const uint32_t nid = nodes_ids[i];
-      if (((static_cast<uint16_t>(1) << 15) & nid) ||
-          curr_level_nodes_data[(uint32_t)(2*nid + 1)] ==
-          curr_level_nodes_data[(uint32_t)(2*nid)]) {
-        continue;
-      }
-      const bool condition = pred(i);
-      const uint16_t new_nid = curr_level_nodes_data[(const uint32_t)(2*nid +
-                                (const uint32_t)(!condition))];
-      nodes_ids[i] = new_nid;
-      const uint16_t check_node_id = (~(static_cast<uint16_t>(1) << 15)) & nodes_ids[i];
-      uint32_t inc = static_cast<uint32_t>(mask_ref[(const uint32_t)(check_node_id)]);
-      rows[1 + rows_count] = i;
-      rows_count += inc;
-      if (is_loss_guided) {
-        rows_left[1 + rows_left_count] = i;
-        rows_left_count += !static_cast<bool>(inc);
-      } else {
-        nodes_count[check_node_id] += inc;
-      }
-    }
-    for (size_t i = 0; i < threads_nodes_count_vec[tid].size(); ++i) {
-      if (nodes_count[i] != 0) {
-        threads_nodes_count[tid][i] = nodes_count[i];
-      }
-    }
-    rows[0] = rows_count;
-    if (is_loss_guided) {
-      rows_left[0] = rows_left_count;
-    }
   }
 
   template<typename BinIdxType, bool is_loss_guided,

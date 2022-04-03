@@ -53,17 +53,17 @@ class GloablApproxBuilder {
   HistogramBuilder<GradientSumT, CPUExpandEntry> histogram_builder_;
   GenericParameter const *ctx_;
 
-  std::vector<ApproxRowPartitioner> partitioner_;
+  std::vector<RowPartitioner> partitioner_;
   // Pointer to last updated tree, used for update prediction cache.
   RegTree *p_last_tree_{nullptr};
   common::Monitor *monitor_;
   size_t n_batches_{0};
   // Cache for histogram cuts.
   common::HistogramCuts feature_values_;
-  std::vector<common::ColumnMatrix> column_matrix_;
+  std::unordered_map<uint32_t, common::ColumnMatrix> column_matrix_;
   std::unordered_map<uint32_t, uint16_t> curr_level_nodes_;
-  // std::vector<int32_t> split_conditions_;
-  // std::vector<uint64_t> split_ind_;
+  std::unordered_map<uint32_t, int32_t> split_conditions_;
+  std::unordered_map<uint32_t, uint64_t> split_ind_;
   std::vector<uint16_t> complete_trees_depth_wise_;
   bool init_column_matrix{true};
 
@@ -74,18 +74,8 @@ class GloablApproxBuilder {
     n_batches_ = 0;
     int32_t n_total_bins = 0;
     partitioner_.clear();
+    // column_matrix_.clear();
     // Generating the GHistIndexMatrix is quite slow, is there a way to speed it up?
-
-    // if (init_column_matrix) {
-    //   size_t n_pages = 0;
-    //   // // // std::cout  << "### 81 p_fmat->GetBatches<GHistIndexMatrix>" << std::endl;
-    //   for (auto const &page :
-    //       p_fmat->GetBatches<GHistIndexMatrix>(BatchSpec(param_, hess, evaluator_))) {
-    //       ++n_pages;
-    //   }
-    //   column_matrix_.resize(n_pages);
-    // }
-      // // // std::cout  << "### 88 p_fmat->GetBatches<GHistIndexMatrix>" << std::endl;
     for (auto const &page :
          p_fmat->GetBatches<GHistIndexMatrix>(BatchSpec(param_, hess, evaluator_))) {
       if (n_total_bins == 0) {
@@ -96,7 +86,6 @@ class GloablApproxBuilder {
       }
 
       if (init_column_matrix) {
-        column_matrix_.emplace_back();
         column_matrix_[n_batches_].Init(page, param_.sparse_threshold, ctx_->Threads());
       }
 
@@ -125,8 +114,6 @@ class GloablApproxBuilder {
     rabit::Allreduce<rabit::op::Sum, double>(reinterpret_cast<double *>(&root_sum), 2);
     std::vector<CPUExpandEntry> nodes{best};
     size_t i = 0;
-    // auto space = this->ConstructHistSpace(nodes);
-      // // // std::cout  << "### 128 p_fmat->GetBatches<GHistIndexMatrix>" << std::endl;
     for (auto const &page :
          p_fmat->GetBatches<GHistIndexMatrix>(BatchSpec(param_, hess))) {
       switch (page.index.GetBinTypeSize()) {
@@ -212,7 +199,6 @@ class GloablApproxBuilder {
     monitor_->Start(__func__);
 
     size_t i = 0;
-    // auto space = this->ConstructHistSpace(nodes_to_build);
     std::vector<std::set<uint16_t>> merged_thread_ids_set(nodes_to_build.size());
     std::vector<std::vector<uint16_t>> merged_thread_ids(nodes_to_build.size());
     for (size_t nid = 0; nid < nodes_to_build.size(); ++nid) {
@@ -230,7 +216,6 @@ class GloablApproxBuilder {
       std::copy(merged_thread_ids_set[nid].begin(),
                 merged_thread_ids_set[nid].end(), merged_thread_ids[nid].begin());
     }
-      // // // std::cout  << "### 232 p_fmat->GetBatches<GHistIndexMatrix>" << std::endl;
     for (auto const &page :
          p_fmat->GetBatches<GHistIndexMatrix>(BatchSpec(param_, hess))) {
       switch (page.index.GetBinTypeSize()) {
@@ -278,6 +263,8 @@ class GloablApproxBuilder {
     // curr_level_nodes_.resize(1 << (param_.max_depth + 2), 0);
     complete_trees_depth_wise_.clear();
     complete_trees_depth_wise_.emplace_back(0);
+    split_conditions_.clear();
+    split_ind_.clear();
 
     Driver<CPUExpandEntry> driver(static_cast<TrainParam::TreeGrowPolicy>(param_.grow_policy));
     // CHECK_EQ(param_.grow_policy, 0);
@@ -286,6 +273,8 @@ class GloablApproxBuilder {
     bst_node_t num_leaves = 1;
     auto expand_set = driver.Pop();
     int depth = 0;
+    bool is_loss_guide = static_cast<TrainParam::TreeGrowPolicy>(param_.grow_policy) ==
+                       TrainParam::kDepthWise ? false : true;
 
     /**
      * Note for update position
@@ -304,6 +293,7 @@ class GloablApproxBuilder {
       depth = expand_set[0].depth + 1;
       // candidates that can be further splited.
       std::vector<CPUExpandEntry> valid_candidates;
+      std::vector<CPUExpandEntry> applied_vec;
       bool is_applied = false;
       // candidates that can be applied.
       for (auto const &candidate : expand_set) {
@@ -316,6 +306,7 @@ class GloablApproxBuilder {
         evaluator_.ApplyTreeSplit(candidate, p_tree);
         // CHECK_LT(candidate.nid, applied.size());
         applied[candidate.nid] = candidate;
+        applied_vec.push_back(candidate);
         is_applied = true;
         CHECK_EQ(applied[candidate.nid].nid, candidate.nid);
         num_leaves++;
@@ -367,26 +358,379 @@ class GloablApproxBuilder {
       }
       monitor_->Start("UpdatePosition");
       size_t i = 0;
-      if (is_applied) {
-      // // // std::cout  << "### 371 p_fmat->GetBatches<GHistIndexMatrix>" << std::endl;
-// // std::cout  << "UpdatePosition!" << std::endl;
+      if (applied_vec.size()) {
         for (auto const &page :
              p_fmat->GetBatches<GHistIndexMatrix>(BatchSpec(param_, hess))) {
-          partitioner_.at(i).UpdatePosition(ctx_, page, &applied, p_tree, &smalest_nodes_mask,
-            &curr_level_nodes_, complete_trees_depth_wise_, depth, is_left_small);
+          switch (column_matrix_[i].GetTypeSize()) {
+            case common::kUint8BinsTypeSize:
+              if (column_matrix_[i].AnyMissing()) {
+                if (is_loss_guide) {
+                  if (page.cut.HasCategorical()) {
+                    partitioner_.at(i).template UpdatePosition<true, uint8_t, true, true>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  } else {
+                    partitioner_.at(i).template UpdatePosition<true, uint8_t, true, false>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  }
+                } else {
+                  if (page.cut.HasCategorical()) {
+                    partitioner_.at(i).template UpdatePosition<true, uint8_t, false, true>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  } else {
+                    partitioner_.at(i).template UpdatePosition<true, uint8_t, false, false>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  }
+                }
+              } else {
+                if (is_loss_guide) {
+                  if (page.cut.HasCategorical()) {
+                    partitioner_.at(i).template UpdatePosition<false, uint8_t, true, true>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  } else {
+                    partitioner_.at(i).template UpdatePosition<false, uint8_t, true, false>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  }
+                } else {
+                  if (page.cut.HasCategorical()) {
+                    partitioner_.at(i).template UpdatePosition<false, uint8_t, false, true>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  } else {
+                    partitioner_.at(i).template UpdatePosition<false, uint8_t, false, false>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  }
+                }
+              }
+              break;
+            case common::kUint16BinsTypeSize:
+              if (column_matrix_[i].AnyMissing()) {
+                if (is_loss_guide) {
+                  if (page.cut.HasCategorical()) {
+                    partitioner_.at(i).template UpdatePosition<true, uint16_t, true, true>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  } else {
+                    partitioner_.at(i).template UpdatePosition<true, uint16_t, true, false>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  }
+                } else {
+                  if (page.cut.HasCategorical()) {
+                    partitioner_.at(i).template UpdatePosition<true, uint16_t, false, true>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  } else {
+                    partitioner_.at(i).template UpdatePosition<true, uint16_t, false, false>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  }
+                }
+              } else {
+                if (is_loss_guide) {
+                  if (page.cut.HasCategorical()) {
+                    partitioner_.at(i).template UpdatePosition<false, uint16_t, true, true>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  } else {
+                    partitioner_.at(i).template UpdatePosition<false, uint16_t, true, false>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  }
+                } else {
+                  if (page.cut.HasCategorical()) {
+                    partitioner_.at(i).template UpdatePosition<false, uint16_t, false, true>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  } else {
+                    partitioner_.at(i).template UpdatePosition<false, uint16_t, false, false>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  }
+                }
+              }
+              break;
+            case common::kUint32BinsTypeSize:
+              if (column_matrix_[i].AnyMissing()) {
+                if (is_loss_guide) {
+                  if (page.cut.HasCategorical()) {
+                    partitioner_.at(i).template UpdatePosition<true, uint32_t, true, true>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  } else {
+                    partitioner_.at(i).template UpdatePosition<true, uint32_t, true, false>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  }
+                } else {
+                  if (page.cut.HasCategorical()) {
+                    partitioner_.at(i).template UpdatePosition<true, uint32_t, false, true>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  } else {
+                    partitioner_.at(i).template UpdatePosition<true, uint32_t, false, false>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  }
+                }
+              } else {
+                if (is_loss_guide) {
+                  if (page.cut.HasCategorical()) {
+                    partitioner_.at(i).template UpdatePosition<false, uint32_t, true, true>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  } else {
+                    partitioner_.at(i).template UpdatePosition<false, uint32_t, true, false>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  }
+                } else {
+                  if (page.cut.HasCategorical()) {
+                    partitioner_.at(i).template UpdatePosition<false, uint32_t, false, true>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  } else {
+                    partitioner_.at(i).template UpdatePosition<false, uint32_t, false, false>(ctx_,
+                      page,
+                      column_matrix_[i],
+                      applied_vec,
+                      p_tree,
+                      depth,
+                      &smalest_nodes_mask,
+                      is_loss_guide,
+                      &split_conditions_,
+                      &split_ind_, param_.max_depth,
+                      &complete_trees_depth_wise_, &curr_level_nodes_, is_left_small,
+                      /*check_is_left_small*/ true);
+                  }
+                }
+              }
+              break;
+            default:
+              CHECK(false);  // no default behavior
+          }
           i++;
         }
-// // std::cout  << "UpdatePosition finished!" << std::endl;
       }
       monitor_->Stop("UpdatePosition");
-// // std::cout  << "393!!!" << std::endl;
 
       std::vector<CPUExpandEntry> best_splits;
       if (!valid_candidates.empty()) {
-// // std::cout  << "BuildHistogram started!" << std::endl;
         this->BuildHistogram(p_fmat, p_tree, valid_candidates, gpair,
                              hess, nodes_to_build, nodes_to_sub);
-// // std::cout  << "BuildHistogram finished!" << std::endl;
         for (auto const &candidate : valid_candidates) {
           int left_child_nidx = tree[candidate.nid].LeftChild();
           int right_child_nidx = tree[candidate.nid].RightChild();
@@ -401,10 +745,8 @@ class GloablApproxBuilder {
         evaluator_.EvaluateSplits(histograms, feature_values_, ft, *p_tree, &best_splits);
         monitor_->Stop("EvaluateSplits");
       }
-// // std::cout  << "Push!" << std::endl;
       driver.Push(best_splits.begin(), best_splits.end());
       expand_set = driver.Pop();
-// // std::cout  << "Pop!" << std::endl;
     }
   }
 };
