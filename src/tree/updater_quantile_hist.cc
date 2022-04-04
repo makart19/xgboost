@@ -210,23 +210,26 @@ void QuantileHistMaker::Builder<GradientSumT>::AddSplitsToTree(
       }
     }
     (*num_leaves) -= it;
-    curr_level_nodes_.clear();
+    child_node_ids_with_complete_tree_mapping.clear();
     for (auto const& entry : expand) {
       if (entry.IsValid(param_, *num_leaves)) {
         (*num_leaves)++;
-        curr_level_nodes_[2*entry.nid] = (*p_tree)[entry.nid].LeftChild();
-        curr_level_nodes_[2*entry.nid + 1] = (*p_tree)[entry.nid].RightChild();
+        child_node_ids_with_complete_tree_mapping[2*entry.nid] =
+          (*p_tree)[entry.nid].LeftChild();
+        child_node_ids_with_complete_tree_mapping[2*entry.nid + 1] =
+          (*p_tree)[entry.nid].RightChild();
         complete_node_ids.push_back((*p_tree)[entry.nid].LeftChild());
         complete_node_ids.push_back((*p_tree)[entry.nid].RightChild());
         if (entry.split.left_sum.GetHess() <= entry.split.right_sum.GetHess() || is_loss_guided) {
-          smalest_nodes_mask[curr_level_nodes_[2*entry.nid]] = true;
+          smalest_nodes_mask[child_node_ids_with_complete_tree_mapping[2*entry.nid]] = true;
         } else {
-          smalest_nodes_mask[curr_level_nodes_[2*entry.nid + 1]] = true;
+          smalest_nodes_mask[child_node_ids_with_complete_tree_mapping[2*entry.nid + 1]] = true;
         }
       } else {
-        curr_level_nodes_[2*entry.nid] = static_cast<uint16_t>(1) << 15 |
+        child_node_ids_with_complete_tree_mapping[2*entry.nid] = static_cast<uint16_t>(1) << 15 |
                                         static_cast<uint16_t>(entry.nid);
-        curr_level_nodes_[2*entry.nid + 1] = curr_level_nodes_[2*entry.nid];
+        child_node_ids_with_complete_tree_mapping[2*entry.nid + 1] =
+          child_node_ids_with_complete_tree_mapping[2*entry.nid];
       }
     }
 
@@ -236,25 +239,28 @@ void QuantileHistMaker::Builder<GradientSumT>::AddSplitsToTree(
         nodes_for_apply_split->push_back(entry);
         evaluator_->ApplyTreeSplit(entry, p_tree);
         (*num_leaves)++;
-        curr_level_nodes_[2*entry.nid] = (*p_tree)[entry.nid].LeftChild();
-        curr_level_nodes_[2*entry.nid + 1] = (*p_tree)[entry.nid].RightChild();
+        child_node_ids_with_complete_tree_mapping[2*entry.nid] =
+          (*p_tree)[entry.nid].LeftChild();
+        child_node_ids_with_complete_tree_mapping[2*entry.nid + 1] =
+          (*p_tree)[entry.nid].RightChild();
         complete_node_ids.push_back((*p_tree)[entry.nid].LeftChild());
         complete_node_ids.push_back((*p_tree)[entry.nid].RightChild());
         if (entry.split.left_sum.GetHess() <= entry.split.right_sum.GetHess() || is_loss_guided) {
-          smalest_nodes_mask[curr_level_nodes_[2*entry.nid]] = true;
-          smalest_nodes_mask[curr_level_nodes_[2*entry.nid + 1]] = false;
+          smalest_nodes_mask[child_node_ids_with_complete_tree_mapping[2*entry.nid]] = true;
+          smalest_nodes_mask[child_node_ids_with_complete_tree_mapping[2*entry.nid + 1]] = false;
         } else {
-          smalest_nodes_mask[curr_level_nodes_[2*entry.nid + 1]] = true;
-          smalest_nodes_mask[curr_level_nodes_[2*entry.nid]] = false;
+          smalest_nodes_mask[child_node_ids_with_complete_tree_mapping[2*entry.nid + 1]] = true;
+          smalest_nodes_mask[child_node_ids_with_complete_tree_mapping[2*entry.nid]] = false;
         }
       } else {
-        curr_level_nodes_[2*entry.nid] = static_cast<uint16_t>(1) << 15 |
+        child_node_ids_with_complete_tree_mapping[2*entry.nid] = static_cast<uint16_t>(1) << 15 |
                                         static_cast<uint16_t>(entry.nid);
-        curr_level_nodes_[2*entry.nid + 1] = curr_level_nodes_[2*entry.nid];
+        child_node_ids_with_complete_tree_mapping[2*entry.nid + 1] =
+          child_node_ids_with_complete_tree_mapping[2*entry.nid];
       }
     }
   }
-  complete_trees_depth_wise_ = complete_node_ids;
+  child_node_ids_ = complete_node_ids;
 }
 
 // Split nodes to 2 sets depending on amount of rows in each node
@@ -328,12 +334,12 @@ void QuantileHistMaker::Builder<GradientSumT>::ExpandTree(
   node_ids_.resize(size_threads, 0);
   bool is_loss_guide = static_cast<TrainParam::TreeGrowPolicy>(param_.grow_policy) ==
                        TrainParam::kDepthWise ? false : true;
-  curr_level_nodes_.clear();
+  child_node_ids_with_complete_tree_mapping.clear();
 
   InitRoot<BinIdxType, any_missing>(gmat, p_fmat, p_tree, gpair_h, &num_leaves, &expand);
   driver.Push(expand[0]);
-  complete_trees_depth_wise_.clear();
-  complete_trees_depth_wise_.emplace_back(0);
+  child_node_ids_.clear();
+  child_node_ids_.emplace_back(0);
   int32_t depth = 0;
   while (!driver.IsEmpty()) {
     std::unordered_map<uint32_t, bool> smalest_nodes_mask;
@@ -359,8 +365,8 @@ void QuantileHistMaker::Builder<GradientSumT>::ExpandTree(
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &complete_trees_depth_wise_,
-                      &curr_level_nodes_);
+                      &child_node_ids_,
+                      &child_node_ids_with_complete_tree_mapping);
         } else {
           partitioner.UpdatePosition<any_missing, BinIdxType, true, false>(this->ctx_, gmat,
                       column_matrix,
@@ -370,8 +376,8 @@ void QuantileHistMaker::Builder<GradientSumT>::ExpandTree(
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &complete_trees_depth_wise_,
-                      &curr_level_nodes_);
+                      &child_node_ids_,
+                      &child_node_ids_with_complete_tree_mapping);
         }
       } else {
         if (gmat.cut.HasCategorical()) {
@@ -383,8 +389,8 @@ void QuantileHistMaker::Builder<GradientSumT>::ExpandTree(
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &complete_trees_depth_wise_,
-                      &curr_level_nodes_);
+                      &child_node_ids_,
+                      &child_node_ids_with_complete_tree_mapping);
         } else {
           partitioner.UpdatePosition<any_missing, BinIdxType, false, false>(this->ctx_, gmat,
                       column_matrix,
@@ -394,8 +400,8 @@ void QuantileHistMaker::Builder<GradientSumT>::ExpandTree(
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &complete_trees_depth_wise_,
-                      &curr_level_nodes_);
+                      &child_node_ids_,
+                      &child_node_ids_with_complete_tree_mapping);
         }
       }
       builder_monitor_.Stop("ApplySplit");

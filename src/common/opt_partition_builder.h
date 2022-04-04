@@ -415,7 +415,7 @@ class OptPartitionBuilder {
 
   size_t DepthSize(GHistIndexMatrix const& gmat,
                    const std::vector<uint16_t>& compleate_trees_depth_wise,
-                   const RegTree* p_tree, bool is_lossguided, size_t depth) {
+                   const RegTree* p_tree, bool is_lossguided) {
     if (is_lossguided) {
       CHECK_GT(compleate_trees_depth_wise.size(), 0);
       size_t max_nid = std::max(compleate_trees_depth_wise[0],
@@ -428,7 +428,7 @@ class OptPartitionBuilder {
     }
   }
   size_t DepthBegin(const std::vector<uint16_t>& compleate_trees_depth_wise,
-                    const RegTree* p_tree, bool is_lossguided, size_t depth) {
+                    const RegTree* p_tree, bool is_lossguided) {
     if (is_lossguided) {
       CHECK_GT(compleate_trees_depth_wise.size(), 0);
       size_t max_nid = std::max(compleate_trees_depth_wise[0],

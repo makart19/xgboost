@@ -220,10 +220,10 @@ class QuantileHistMaker: public TreeUpdater {
     // the internal row sets
     common::RowSetCollection row_set_collection_;
     std::vector<uint16_t> node_ids_;
-    std::unordered_map<uint32_t, uint16_t> curr_level_nodes_;
+    std::unordered_map<uint32_t, uint16_t> child_node_ids_with_complete_tree_mapping;
     std::unordered_map<uint32_t, int32_t> split_conditions_;
     std::unordered_map<uint32_t, uint64_t> split_ind_;
-    std::vector<uint16_t> complete_trees_depth_wise_;
+    std::vector<uint16_t> child_node_ids_;
     std::vector<GradientPair> gpair_local_;
 
     /*! \brief feature with least # of bins. to be used for dense specialization
