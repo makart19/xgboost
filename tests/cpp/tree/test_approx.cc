@@ -41,12 +41,9 @@ TEST(Approx, Partitioner) {
       candidates[0].split.sindex = 0;
       candidates[0].split.sindex |= (1U << 31);
       std::unordered_map<uint32_t, bool> mask;//(1 << 4, false);
-      std::unordered_map<uint32_t, uint16_t> nodes;
       std::vector<uint16_t> cnodes;
       cnodes.resize(1 << (4), 0);
       cnodes[1] = 1;
-      nodes[0] = 1;
-      nodes[1] = 2;
       candidates_vec[0].split.split_value = min_value;
       candidates_vec[0].split.sindex = 0;
       candidates_vec[0].split.sindex |= (1U << 31);
@@ -55,7 +52,7 @@ TEST(Approx, Partitioner) {
       partitioner.UpdatePosition<false, uint8_t, false, false>(&ctx, page,
         column_matrix, candidates_vec,
         &tree, 0, &mask, false, &split_conditions_, &split_ind_, 2, &cnodes,
-        &nodes, true, false);
+        true, false);
 
       auto const & assignments = partitioner.GetNodeAssignments();
       std::vector<size_t> result(3, 0);
@@ -84,12 +81,9 @@ TEST(Approx, Partitioner) {
       candidates[0].split.sindex = 0;
       candidates[0].split.sindex |= (1U << 31);
       std::unordered_map<uint32_t, bool> mask;//(1 << 4, false);
-      std::unordered_map<uint32_t, uint16_t> nodes;
       std::vector<uint16_t> cnodes;
       cnodes.resize(1 << (4), 0);
       cnodes[1] = 1;
-      nodes[0] = 1;
-      nodes[1] = 2;
       candidates_vec[0].split.split_value = split_value;
       candidates_vec[0].split.sindex = 0;
       candidates_vec[0].split.sindex |= (1U << 31);
@@ -98,7 +92,7 @@ TEST(Approx, Partitioner) {
       partitioner.UpdatePosition<false, uint8_t, false, false>(&ctx, page,
         column_matrix, candidates_vec,
         &tree, 0, &mask, false, &split_conditions_, &split_ind_, 2, &cnodes,
-        &nodes, true, false);
+        true, false);
 
       auto const & assignments = partitioner.GetNodeAssignments();
       size_t row_id = 0;

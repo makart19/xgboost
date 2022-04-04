@@ -22,6 +22,8 @@ TEST(OptPartitionBuilder, BasicTest) {
   ColumnMatrix column_matrix;
   column_matrix.Init(gmat, 0, 1);
   RegTree tree;
+  tree.ExpandNode(0, 0, 0, true, 0, 0, 0, 0, 0, 0, 0);
+
   common::OptPartitionBuilder opt_partition_builder;
 
   opt_partition_builder.template Init<uint8_t>(gmat, column_matrix, &tree,
@@ -35,10 +37,7 @@ TEST(OptPartitionBuilder, BasicTest) {
   std::unordered_map<uint32_t, bool> smalest_nodes_mask;
   smalest_nodes_mask[1] = true;
   std::unordered_map<uint32_t, uint16_t> nodes;//(1, 0);
-  std::unordered_map<uint32_t, uint16_t> curr_level_nodes;//(2);
   std::vector<uint32_t> split_nodes(1, 0);
-  curr_level_nodes[0] = 1;
-  curr_level_nodes[1] = 2;
   auto pred = [&](auto ridx, auto bin_id, auto nid, auto split_cond) {
     return false;
   };
@@ -49,11 +48,10 @@ TEST(OptPartitionBuilder, BasicTest) {
                           &split_conditions,
                           &split_ind,
                           &smalest_nodes_mask,// row_gpairs,
-                          &curr_level_nodes,
                           column_matrix, split_nodes, pred, 1);
-  opt_partition_builder.UpdateRowBuffer(node_ids, &tree,
-                                                   gmat, gmat.cut.Ptrs().size() - 1,
-                                                   0, node_ids, false);
+  opt_partition_builder.UpdateRowBuffer(node_ids,
+                                        gmat, gmat.cut.Ptrs().size() - 1,
+                                        0, node_ids, false);
   size_t left_cnt = 0, right_cnt = 0;
   const size_t bin_id_min = gmat.cut.Ptrs()[0];
   const size_t bin_id_max = gmat.cut.Ptrs()[1];
@@ -71,6 +69,9 @@ TEST(OptPartitionBuilder, BasicTest) {
         }
     }
   }
+  std::cout << "opt_partition_builder.summ_size: " << opt_partition_builder.summ_size << std::endl;
+  std::cout << "left_cnt: " << left_cnt << std::endl;
+  std::cout << "right_cnt: " << right_cnt << std::endl;
   ASSERT_EQ(opt_partition_builder.summ_size, left_cnt);
   ASSERT_EQ(kNRows - opt_partition_builder.summ_size, right_cnt);
 }

@@ -72,7 +72,6 @@ class RowPartitioner {
     std::unordered_map<uint32_t, int32_t>* split_conditions_,
     std::unordered_map<uint32_t, uint64_t>* split_ind_, const size_t max_depth,
     std::vector<uint16_t>* child_node_ids_,
-    std::unordered_map<uint32_t, uint16_t>* child_node_ids_with_complete_tree_mapping,
     bool is_left_small = true,
     bool check_is_left_small = false) {
     // 1. Find split condition for each split
@@ -89,18 +88,14 @@ class RowPartitioner {
         (*split_ind_)[nid] = fid*((gmat.IsDense() ? rows_offset : 1));
         (*split_conditions_)[nid] = (*split_conditions_)[nid] - gmat.cut.Ptrs()[fid];
     }
-    std::vector<uint16_t> child_node_ids_with_complete_tree_mappingdata_vec;
     std::vector<uint64_t> split_ind_data_vec;
     std::vector<int32_t> split_conditions_data_vec;
     std::vector<bool> smalest_nodes_mask_vec;
     if (max_depth != 0) {
-      child_node_ids_with_complete_tree_mappingdata_vec.resize((1 << (max_depth + 2)), 0);
       split_ind_data_vec.resize((1 << (max_depth + 2)), 0);
       split_conditions_data_vec.resize((1 << (max_depth + 2)), 0);
       smalest_nodes_mask_vec.resize((1 << (max_depth + 2)), 0);
       for (size_t nid = 0; nid < (1 << (max_depth + 2)); ++nid) {
-        child_node_ids_with_complete_tree_mappingdata_vec[nid] =
-          (*child_node_ids_with_complete_tree_mapping)[nid];
         split_ind_data_vec[nid] = (*split_ind_)[nid];
         split_conditions_data_vec[nid] = (*split_conditions_)[nid];
         smalest_nodes_mask_vec[nid] = (*smalest_nodes_mask_ptr)[nid];
@@ -110,9 +105,9 @@ class RowPartitioner {
     int nthreads = ctx->Threads();
     nthreads = std::max(nthreads, 1);
     const size_t depth_begin = opt_partition_builder_.DepthBegin(*child_node_ids_,
-                                                                p_tree, loss_guide);
+                                                                 loss_guide);
     const size_t depth_size = opt_partition_builder_.DepthSize(gmat, *child_node_ids_,
-                                                              p_tree, loss_guide);
+                                                               loss_guide);
 
     auto const& index = gmat.index;
     auto const& cut_values = gmat.cut.Values();
@@ -169,7 +164,6 @@ class RowPartitioner {
           &split_conditions_data_vec,
           &split_ind_data_vec,
           &smalest_nodes_mask_vec,
-          &child_node_ids_with_complete_tree_mappingdata_vec,
           column_matrix,
           split_nodes, pred, depth);
       }
@@ -196,7 +190,6 @@ class RowPartitioner {
           split_conditions_,
           split_ind_,
           smalest_nodes_mask_ptr,
-          child_node_ids_with_complete_tree_mapping,
           column_matrix,
           split_nodes, pred, depth);
       }
@@ -204,11 +197,11 @@ class RowPartitioner {
 
     if (depth != max_depth || loss_guide) {
       opt_partition_builder_.UpdateRowBuffer(*child_node_ids_,
-                                            p_tree, gmat, n_features, depth,
-                                            node_ids_, is_loss_guided);
+                                             gmat, n_features, depth,
+                                             node_ids_, is_loss_guided);
       opt_partition_builder_.UpdateThreadsWork(*child_node_ids_, gmat,
-                                              n_features, depth, is_loss_guided,
-                                              is_left_small, check_is_left_small);
+                                               n_features, depth, is_loss_guided,
+                                               is_left_small, check_is_left_small);
     }
   }
 

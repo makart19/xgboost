@@ -61,7 +61,6 @@ class GloablApproxBuilder {
   // Cache for histogram cuts.
   common::HistogramCuts feature_values_;
   std::unordered_map<uint32_t, common::ColumnMatrix> column_matrix_;
-  std::unordered_map<uint32_t, uint16_t> child_node_ids_with_complete_tree_mapping;
   std::unordered_map<uint32_t, int32_t> split_conditions_;
   std::unordered_map<uint32_t, uint64_t> split_ind_;
   std::vector<uint16_t> child_node_ids_;
@@ -259,8 +258,6 @@ class GloablApproxBuilder {
                   DMatrix *p_fmat) {
     p_last_tree_ = p_tree;
     this->InitData(p_fmat, hess);
-    child_node_ids_with_complete_tree_mapping.clear();
-    // child_node_ids_with_complete_tree_mapping.resize(1 << (param_.max_depth + 2), 0);
     child_node_ids_.clear();
     child_node_ids_.emplace_back(0);
     split_conditions_.clear();
@@ -298,10 +295,6 @@ class GloablApproxBuilder {
       // candidates that can be applied.
       for (auto const &candidate : expand_set) {
         if (!candidate.IsValid(param_, num_leaves)) {
-          child_node_ids_with_complete_tree_mapping[2*candidate.nid] =
-            static_cast<uint16_t>(1) << 15 | static_cast<uint16_t>(candidate.nid);
-          child_node_ids_with_complete_tree_mapping[2*candidate.nid + 1] =
-            child_node_ids_with_complete_tree_mapping[2*candidate.nid];
           continue;
         }
         evaluator_.ApplyTreeSplit(candidate, p_tree);
@@ -320,11 +313,6 @@ class GloablApproxBuilder {
           }
           child_node_ids_.push_back(left_child_nidx);
           child_node_ids_.push_back(tree[candidate.nid].RightChild());
-          child_node_ids_with_complete_tree_mapping[2*candidate.nid] =
-            static_cast<uint16_t>(1) << 15 | static_cast<uint16_t>(left_child_nidx);
-          child_node_ids_with_complete_tree_mapping[2*candidate.nid + 1] =
-            static_cast<uint16_t>(1) << 15 |
-            static_cast<uint16_t>(tree[candidate.nid].RightChild());
         }
       }
 
@@ -334,8 +322,6 @@ class GloablApproxBuilder {
       for (auto const &c : valid_candidates) {
         auto left_nidx = (*p_tree)[c.nid].LeftChild();
         auto right_nidx = (*p_tree)[c.nid].RightChild();
-        child_node_ids_with_complete_tree_mapping[2*c.nid] = left_nidx;
-        child_node_ids_with_complete_tree_mapping[2*c.nid + 1] = right_nidx;
         CHECK_NE(left_nidx, right_nidx);
         auto fewer_right = c.split.right_sum.GetHess() < c.split.left_sum.GetHess();
         auto build_nidx = left_nidx;
@@ -378,7 +364,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   } else {
                     partitioner_.at(i).template UpdatePosition<true, uint8_t, true, false>(ctx_,
@@ -391,7 +377,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   }
                 } else {
@@ -406,7 +392,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   } else {
                     partitioner_.at(i).template UpdatePosition<true, uint8_t, false, false>(ctx_,
@@ -419,7 +405,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   }
                 }
@@ -436,7 +422,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   } else {
                     partitioner_.at(i).template UpdatePosition<false, uint8_t, true, false>(ctx_,
@@ -449,7 +435,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   }
                 } else {
@@ -464,7 +450,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   } else {
                     partitioner_.at(i).template UpdatePosition<false, uint8_t, false, false>(ctx_,
@@ -477,7 +463,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   }
                 }
@@ -497,7 +483,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   } else {
                     partitioner_.at(i).template UpdatePosition<true, uint16_t, true, false>(ctx_,
@@ -510,7 +496,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   }
                 } else {
@@ -525,7 +511,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   } else {
                     partitioner_.at(i).template UpdatePosition<true, uint16_t, false, false>(ctx_,
@@ -538,7 +524,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   }
                 }
@@ -555,7 +541,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   } else {
                     partitioner_.at(i).template UpdatePosition<false, uint16_t, true, false>(ctx_,
@@ -568,7 +554,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   }
                 } else {
@@ -583,7 +569,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   } else {
                     partitioner_.at(i).template UpdatePosition<false, uint16_t, false, false>(ctx_,
@@ -596,7 +582,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   }
                 }
@@ -616,7 +602,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   } else {
                     partitioner_.at(i).template UpdatePosition<true, uint32_t, true, false>(ctx_,
@@ -629,7 +615,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   }
                 } else {
@@ -644,7 +630,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   } else {
                     partitioner_.at(i).template UpdatePosition<true, uint32_t, false, false>(ctx_,
@@ -657,7 +643,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   }
                 }
@@ -674,7 +660,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   } else {
                     partitioner_.at(i).template UpdatePosition<false, uint32_t, true, false>(ctx_,
@@ -687,7 +673,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   }
                 } else {
@@ -702,7 +688,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   } else {
                     partitioner_.at(i).template UpdatePosition<false, uint32_t, false, false>(ctx_,
@@ -715,7 +701,7 @@ class GloablApproxBuilder {
                       is_loss_guide,
                       &split_conditions_,
                       &split_ind_, param_.max_depth,
-                      &child_node_ids_, &child_node_ids_with_complete_tree_mapping, is_left_small,
+                      &child_node_ids_, is_left_small,
                       /*check_is_left_small*/ true);
                   }
                 }
