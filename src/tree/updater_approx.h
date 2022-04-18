@@ -25,6 +25,7 @@
 #include "xgboost/json.h"
 #include "xgboost/tree_updater.h"
 
+// test
 namespace xgboost {
 namespace tree {
 class RowPartitioner {
