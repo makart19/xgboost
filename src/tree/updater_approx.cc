@@ -350,19 +350,20 @@ class GloablApproxBuilder {
       if (applied_vec.size()) {
         for (auto const &page :
              p_fmat->GetBatches<GHistIndexMatrix>(BatchSpec(param_, hess))) {
-				 partitioner_.at(i).UpdatePositionDispatched({column_matrix_[i].AnyMissing(), column_matrix_[i].GetTypeSize(), is_loss_guide, page.cut.HasCategorical()},
-					 ctx_,
-					 page,
-					 column_matrix_[i],
-					 applied_vec,
-					 p_tree,
-					 depth,
-					 &smalest_nodes_mask,
-					 is_loss_guide,
-					 &split_conditions_,
-					 &split_ind_, param_.max_depth,
-					 &child_node_ids_, is_left_small,
-					 true);
+         partitioner_.at(i).UpdatePositionDispatched({column_matrix_[i].AnyMissing(),
+         column_matrix_[i].GetTypeSize(), is_loss_guide, page.cut.HasCategorical()},
+           ctx_,
+           page,
+           column_matrix_[i],
+           applied_vec,
+           p_tree,
+           depth,
+           &smalest_nodes_mask,
+           is_loss_guide,
+           &split_conditions_,
+           &split_ind_, param_.max_depth,
+           &child_node_ids_, is_left_small,
+           true);
           i++;
         }
       }

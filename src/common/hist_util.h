@@ -212,7 +212,9 @@ struct BinTypeMap<kUint16BinsTypeSize> {
     using type = uint16_t;
 };
 
-using BinTypeSizeSequence = std::integer_sequence<BinTypeSize, BinTypeSize::kUint8BinsTypeSize, BinTypeSize::kUint16BinsTypeSize, BinTypeSize::kUint32BinsTypeSize>;
+using BinTypeSizeSequence = std::integer_sequence<BinTypeSize,
+  BinTypeSize::kUint8BinsTypeSize, BinTypeSize::kUint16BinsTypeSize,
+  BinTypeSize::kUint32BinsTypeSize>;
 using BoolSequence = std::integer_sequence<bool, true, false>;
 
 /**
