@@ -28,20 +28,146 @@
 namespace xgboost {
 namespace tree {
 class RowPartitioner {
+public:
+  using NodeIdListT = std::vector<uint16_t>; 
+  using NodeMaskListT = std::unordered_map<uint32_t, bool>;
+  using SplitFtrListT = std::unordered_map<uint32_t, int32_t>;
+  using SplitIndListT = std::unordered_map<uint32_t, uint64_t>;
+
+private:
   common::OptPartitionBuilder opt_partition_builder_;
-  std::vector<uint16_t> node_ids_;
+  NodeIdListT node_ids_;
 
  public:
   bst_row_t base_rowid = 0;
   bool is_loss_guided = false;
 
  public:
+private:
+  /**
+   * \brief Class for storing UpdatePosition template parameters' values for dispatching simplification
+   */
+    class DispatchParameterSet final {
+    public:
+        DispatchParameterSet(bool has_missing, common::BinTypeSize bin_type_size, bool loss_guide, bool has_categorical) : 
+                    has_missing_(has_missing), bin_type_size_(bin_type_size), loss_guide_(loss_guide), has_categorical_(has_categorical) {}
+        
+        common::BinTypeSize GetBinTypeSize() const { return bin_type_size_; }
+
+        bool GetHasMissing() const { return has_missing_; }
+        bool GetLossGuide() const { return loss_guide_; }
+        bool GetHasCategorical() const { return has_categorical_; }
+
+    private:
+        bool has_missing_;
+        common::BinTypeSize bin_type_size_;
+        bool loss_guide_;
+        bool has_categorical_;
+    };
+
+  /**
+   * \brief Class for storing UpdatePosition call params' values 
+   *   for simplification of dispatching by template parameters
+   */
+	class UpdatePositionHelper final {
+	public:
+		UpdatePositionHelper(xgboost::tree::RowPartitioner& row_partitioner,
+			GenericParameter const* ctx, GHistIndexMatrix const& gmat,
+			common::ColumnMatrix const& column_matrix,
+			std::vector<xgboost::tree::CPUExpandEntry> const& nodes, 
+			RegTree const* p_tree,
+			int depth,
+			NodeMaskListT* smalest_nodes_mask_ptr,
+			const bool loss_guide,
+			SplitFtrListT* split_conditions,
+			SplitIndListT* split_ind, 
+			const size_t max_depth,
+			NodeIdListT* child_node_ids,
+			bool is_left_small = true,
+			bool check_is_left_small = false) :
+				row_partitioner_(row_partitioner),
+				ctx_(ctx),
+				gmat_(gmat),
+				column_matrix_(column_matrix),
+				nodes_(nodes),
+				p_tree_(p_tree),
+				depth_(depth),
+				smalest_nodes_mask_ptr_(smalest_nodes_mask_ptr),
+				loss_guide_(loss_guide),
+				split_conditions_(split_conditions),
+				split_ind_(split_ind),
+				max_depth_(max_depth),
+				child_node_ids_(child_node_ids),
+				is_left_small_(is_left_small),
+				check_is_left_small_(check_is_left_small) { }
+
+		template <bool missing, typename BinType, bool is_loss_guide, bool has_cat>
+		void Call() {
+			row_partitioner_.template UpdatePosition<missing, BinType, is_loss_guide, has_cat>(
+				ctx_,
+				gmat_,
+				column_matrix_,
+				nodes_,
+				p_tree_,
+				depth_,
+				smalest_nodes_mask_ptr_,
+				loss_guide_,
+				split_conditions_,
+				split_ind_,
+				max_depth_,
+				child_node_ids_,
+				is_left_small_,
+				check_is_left_small_);
+		}
+	private:
+		xgboost::tree::RowPartitioner& row_partitioner_;
+		GenericParameter const* ctx_;
+		GHistIndexMatrix const& gmat_;
+		common::ColumnMatrix const& column_matrix_;
+		std::vector<xgboost::tree::CPUExpandEntry> const& nodes_;
+		RegTree const* p_tree_;
+		int depth_;
+		NodeMaskListT* smalest_nodes_mask_ptr_;
+		const bool loss_guide_;
+		SplitFtrListT* split_conditions_;
+		SplitIndListT* split_ind_;
+		const size_t max_depth_;
+		NodeIdListT* child_node_ids_;
+		bool is_left_small_;
+		bool check_is_left_small_;
+	};
+public:
+
+	template <bool ... switch_values_set>
+	void DispatchFromHasMissing(UpdatePositionHelper&& pos_updater, const DispatchParameterSet&& dispatch_values, std::integer_sequence<bool, switch_values_set...>) {
+		std::initializer_list<std::int32_t> ({(dispatch_values.GetHasMissing() == switch_values_set ? 
+										DispatchFromBinType<switch_values_set>(std::move(pos_updater), std::move(dispatch_values), std::move(common::BinTypeSizeSequence{})), 1 : 0) ...});
+	}
+
+	template <bool missing, common::BinTypeSize ... switch_values_set>
+	void DispatchFromBinType(UpdatePositionHelper&& pos_updater, const DispatchParameterSet&& dispatch_values, std::integer_sequence<common::BinTypeSize, switch_values_set...>) {
+		std::initializer_list<std::int32_t> ({(dispatch_values.GetBinTypeSize() == switch_values_set ? 
+										DispatchFromLossGuide<missing, typename common::BinTypeMap<switch_values_set>::type>(std::move(pos_updater), std::move(dispatch_values), std::move(common::BoolSequence{})), 1 : 0) ...});
+	}
+
+	template <bool missing, typename BinType, bool ... switch_values_set>
+	void DispatchFromLossGuide(UpdatePositionHelper&& pos_updater, const DispatchParameterSet&& dispatch_values, std::integer_sequence<bool, switch_values_set...>) {
+		std::initializer_list<std::int32_t> ({(dispatch_values.GetLossGuide() == switch_values_set ? 
+										DispatchFromHasCategorical<missing, BinType, switch_values_set>(std::move(pos_updater), std::move(dispatch_values), std::move(common::BoolSequence{})), 1 : 0) ...});
+	}
+
+	template <bool missing, typename BinType, bool is_loss_guide, bool ... switch_values_set>
+	void DispatchFromHasCategorical(UpdatePositionHelper&& pos_updater, const DispatchParameterSet&& dispatch_values, std::integer_sequence<bool, switch_values_set...>) {
+		std::initializer_list<std::int32_t> ({(dispatch_values.GetHasCategorical() == switch_values_set ? 
+										pos_updater.template Call<missing, BinType, is_loss_guide, switch_values_set>(), 1 : 0) ...});
+	}
+
   /**
    * \brief Turn split values into discrete bin indices.
    */
   void FindSplitConditions(const std::vector<CPUExpandEntry> &nodes,
                            const RegTree &tree, const GHistIndexMatrix &gmat,
-                           std::unordered_map<uint32_t, int32_t> *split_conditions) {
+                           SplitFtrListT *split_conditions) {
     for (const auto& node : nodes) {
       const int32_t nid = node.nid;
       const bst_uint fid = tree[nid].SplitIndex();
@@ -61,17 +187,23 @@ class RowPartitioner {
     }
   }
 
+  template <typename ... Args>
+  void UpdatePositionDispatched(DispatchParameterSet&& dispatch_params, Args&& ... args) {
+      UpdatePositionHelper helper(*this, std::forward<Args>(args)...);
+      DispatchFromHasMissing(std::move(helper), std::move(dispatch_params), std::move(common::BoolSequence{}));
+  }
+
   template <bool any_missing, typename BinIdxType,
             bool is_loss_guided, bool any_cat>
   void UpdatePosition(GenericParameter const* ctx, GHistIndexMatrix const& gmat,
     common::ColumnMatrix const& column_matrix,
     std::vector<CPUExpandEntry> const& nodes, RegTree const* p_tree,
     int depth,
-    std::unordered_map<uint32_t, bool>* smalest_nodes_mask_ptr,
+    NodeMaskListT* smalest_nodes_mask_ptr,
     const bool loss_guide,
-    std::unordered_map<uint32_t, int32_t>* split_conditions_,
-    std::unordered_map<uint32_t, uint64_t>* split_ind_, const size_t max_depth,
-    std::vector<uint16_t>* child_node_ids_,
+    SplitFtrListT* split_conditions_,
+    SplitIndListT* split_ind_, const size_t max_depth,
+    NodeIdListT* child_node_ids_,
     bool is_left_small = true,
     bool check_is_left_small = false) {
     // 1. Find split condition for each split
@@ -205,7 +337,7 @@ class RowPartitioner {
     }
   }
 
-  std::vector<uint16_t> &GetNodeAssignments() { return node_ids_; }
+  NodeIdListT &GetNodeAssignments() { return node_ids_; }
 
   auto const &GetThreadTasks(const size_t tid) const {
     return opt_partition_builder_.GetSlices(tid);

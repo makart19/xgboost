@@ -197,6 +197,24 @@ enum BinTypeSize : uint32_t {
   kUint32BinsTypeSize = 4
 };
 
+template <BinTypeSize size>
+struct BinTypeMap {
+    using type = uint32_t;
+};
+
+template <>
+struct BinTypeMap<kUint8BinsTypeSize> {
+    using type = uint8_t;
+};
+
+template <>
+struct BinTypeMap<kUint16BinsTypeSize> {
+    using type = uint16_t;
+};
+
+using BinTypeSizeSequence = std::integer_sequence<BinTypeSize, BinTypeSize::kUint8BinsTypeSize, BinTypeSize::kUint16BinsTypeSize, BinTypeSize::kUint32BinsTypeSize>;
+using BoolSequence = std::integer_sequence<bool, true, false>;
+
 /**
  * \brief Optionally compressed gradient index. The compression works only with dense
  *        data.
