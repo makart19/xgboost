@@ -197,7 +197,7 @@ enum BinTypeSize : size_t {
   kUint32BinsTypeSize = 4
 };
 
-template <BinTypeSize size>
+template <size_t size>
 struct BinTypeMap {
     using type = uint32_t;
 };
@@ -212,7 +212,7 @@ struct BinTypeMap<kUint16BinsTypeSize> {
     using type = uint16_t;
 };
 
-using BinTypeSizeSequence = std::integer_sequence<BinTypeSize,
+using BinTypeSizeSequence = std::integer_sequence<size_t,
   BinTypeSize::kUint8BinsTypeSize, BinTypeSize::kUint16BinsTypeSize,
   BinTypeSize::kUint32BinsTypeSize>;
 using BoolSequence = std::integer_sequence<bool, true, false>;

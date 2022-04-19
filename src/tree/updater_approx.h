@@ -151,11 +151,12 @@ class RowPartitioner {
       std::move(common::BinTypeSizeSequence{})), 1 : 0) ...});
   }
 
-  template <bool missing, common::BinTypeSize ... switch_values_set>
+  template <bool missing, size_t ... switch_values_set>
   void DispatchFromBinType(UpdatePositionHelper&& pos_updater,
     const DispatchParameterSet&& dispatch_values,
-                           std::integer_sequence<common::BinTypeSize, switch_values_set...>) {
-    std::initializer_list<std::int32_t> ({(dispatch_values.GetBinTypeSize() == switch_values_set ?
+                           std::integer_sequence<size_t, switch_values_set...>) {
+    std::initializer_list<std::int32_t> ({(dispatch_values.GetBinTypeSize()
+                    == static_cast<common::BinTypeSize>(switch_values_set) ?
                     DispatchFromLossGuide<missing,
                     typename common::BinTypeMap<switch_values_set>::type>(std::move(pos_updater),
                     std::move(dispatch_values), std::move(common::BoolSequence{})), 1 : 0) ...});
