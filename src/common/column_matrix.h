@@ -146,6 +146,12 @@ class ColumnMatrix {
   }
 
   // get index data ptr
+  template <typename Data>
+  const Data* GetIndexData() const {
+    return reinterpret_cast<const Data*>(index_.data());
+  }
+
+  // get index data ptr
   const uint8_t* GetIndexData() const {
     return index_.data();
   }

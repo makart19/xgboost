@@ -25,7 +25,6 @@
 #include "xgboost/json.h"
 #include "xgboost/tree_updater.h"
 
-// test
 namespace xgboost {
 namespace tree {
 class RowPartitioner {
@@ -394,25 +393,9 @@ class RowPartitioner {
         }
       }
     }
-    switch (column_matrix.GetTypeSize()) {
-      case common::kUint8BinsTypeSize:
-        opt_partition_builder_.Init<uint8_t>(gmat, column_matrix, p_tree_local,
-                                                ctx->Threads(), max_depth,
-                                                is_loss_guide);
-        break;
-      case common::kUint16BinsTypeSize:
-        opt_partition_builder_.Init<uint16_t>(gmat, column_matrix, p_tree_local,
-                                                ctx->Threads(), max_depth,
-                                                is_loss_guide);
-        break;
-      case common::kUint32BinsTypeSize:
-        opt_partition_builder_.Init<uint32_t>(gmat, column_matrix, p_tree_local,
-                                                ctx->Threads(), max_depth,
-                                                is_loss_guide);
-        break;
-      default:
-        CHECK(false);  // no default behavior
-    }
+    opt_partition_builder_.Init(gmat, column_matrix, p_tree_local,
+                                            ctx->Threads(), max_depth,
+                                            is_loss_guide);
     opt_partition_builder_.SetSlice(0, 0, gmat.row_ptr.size() - 1);
     node_ids_.resize(gmat.row_ptr.size() - 1, 0);
   }
@@ -439,25 +422,9 @@ class RowPartitioner {
         }
       }
     }
-    switch (column_matrix.GetTypeSize()) {
-      case common::kUint8BinsTypeSize:
-        opt_partition_builder_.Init<uint8_t>(gmat, column_matrix, p_tree_local,
-                                                ctx->Threads(), max_depth,
-                                                is_loss_guide);
-        break;
-      case common::kUint16BinsTypeSize:
-        opt_partition_builder_.Init<uint16_t>(gmat, column_matrix, p_tree_local,
-                                                ctx->Threads(), max_depth,
-                                                is_loss_guide);
-        break;
-      case common::kUint32BinsTypeSize:
-        opt_partition_builder_.Init<uint32_t>(gmat, column_matrix, p_tree_local,
-                                                ctx->Threads(), max_depth,
-                                                is_loss_guide);
-        break;
-      default:
-        CHECK(false);  // no default behavior
-    }
+    opt_partition_builder_.Init(gmat, column_matrix, p_tree_local,
+                                            ctx->Threads(), max_depth,
+                                            is_loss_guide);
     opt_partition_builder_.SetSlice(0, 0, gmat.row_ptr.size() - 1);
     node_ids_.resize(gmat.row_ptr.size() - 1, 0);
   }

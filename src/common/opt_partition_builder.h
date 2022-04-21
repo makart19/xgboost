@@ -136,6 +136,25 @@ class OptPartitionBuilder {
     }
   }
 
+  void Init(GHistIndexMatrix const& gmat, const ColumnMatrix& column_matrix,
+            const RegTree* p_tree_local, size_t nthreads, size_t max_depth,
+            bool is_lossguide) {
+    switch (column_matrix.GetTypeSize()) {
+      case common::kUint8BinsTypeSize:
+        Init<uint8_t>(gmat, column_matrix, p_tree_local, nthreads, max_depth,
+            is_lossguide);
+        break;
+      case common::kUint16BinsTypeSize:
+        Init<uint16_t>(gmat, column_matrix, p_tree_local, nthreads, max_depth,
+            is_lossguide);
+        break;
+      default:
+        Init<uint32_t>(gmat, column_matrix, p_tree_local, nthreads, max_depth,
+            is_lossguide);
+        break;
+    }
+  }
+
   template <typename BinIdxType>
   void Init(GHistIndexMatrix const& gmat, const ColumnMatrix& column_matrix,
             const RegTree* p_tree_local, size_t nthreads, size_t max_depth,
@@ -192,6 +211,39 @@ class OptPartitionBuilder {
     node_id_for_threads.clear();
     nodes_count.clear();
     UpdateRootThreadWork();
+  }
+
+  template<bool is_loss_guided, bool all_dense, bool any_cat, typename Predicate>
+  void CommonPartition(size_t tid, const size_t row_indices_begin,
+                       const size_t row_indices_end, uint16_t* nodes_ids,
+                       std::unordered_map<uint32_t, int32_t>* split_conditions,
+                       std::unordered_map<uint32_t, uint64_t>* split_ind,
+                       std::unordered_map<uint32_t, bool>* smalest_nodes_mask,
+                       const ColumnMatrix& column_matrix,
+                       const std::vector<uint32_t>& split_nodes, Predicate&& pred, size_t depth) {
+    switch (column_matrix.GetTypeSize()) {
+      case common::kUint8BinsTypeSize:
+        CommonPartition<uint8_t, is_loss_guided, all_dense, any_cat>(tid,
+                           row_indices_begin, row_indices_end,
+                           column_matrix.template GetIndexData<uint8_t>(),
+                           nodes_ids, split_conditions, split_ind, smalest_nodes_mask,
+                           column_matrix, split_nodes, std::forward<Predicate>(pred), depth);
+        break;
+      case common::kUint16BinsTypeSize:
+        CommonPartition<uint16_t, is_loss_guided, all_dense, any_cat>(tid,
+                           row_indices_begin, row_indices_end,
+                           column_matrix.template GetIndexData<uint16_t>(),
+                           nodes_ids, split_conditions, split_ind, smalest_nodes_mask,
+                           column_matrix, split_nodes, std::forward<Predicate>(pred), depth);
+        break;
+      default:
+        CommonPartition<uint32_t, is_loss_guided, all_dense, any_cat>(tid,
+                           row_indices_begin, row_indices_end,
+                           column_matrix.template GetIndexData<uint32_t>(),
+                           nodes_ids, split_conditions, split_ind, smalest_nodes_mask,
+                           column_matrix, split_nodes, std::forward<Predicate>(pred), depth);
+        break;
+    }
   }
 
   template<typename BinIdxType, bool is_loss_guided,

@@ -42,24 +42,6 @@ using DMatrixP = std::shared_ptr<DMatrix>;
     return std::move(column_matrix);
   }
 
-  void CommonPartitionCheck(const GHistIndexMatrix& gmat,
-                            const ColumnMatrix& column_matrix,
-                            const RegTree& tree) {
-    switch (column_matrix.GetTypeSize()) {
-        case kUint8BinsTypeSize:
-          CommonPartitionCheckImpl<typename BinTypeMap<kUint8BinsTypeSize>::type>(gmat,
-                                                                    column_matrix, tree);
-          break;
-        case kUint16BinsTypeSize:
-          CommonPartitionCheckImpl<typename BinTypeMap<kUint16BinsTypeSize>::type>(gmat,
-                                                                    column_matrix, tree);
-          break;
-        default:
-          CommonPartitionCheckImpl<typename BinTypeMap<kUint32BinsTypeSize>::type>(gmat,
-                                                                    column_matrix, tree);
-    }
-  }
-
   std::tuple<size_t, size_t> GetRef(const GHistIndexMatrix& gmat, size_t split_bin_id) {
     size_t left_cnt = 0;
     size_t right_cnt = 0;
@@ -82,9 +64,7 @@ using DMatrixP = std::shared_ptr<DMatrix>;
     return std::make_tuple(left_cnt, right_cnt);
   }
 
- private:
-  template <typename BinType>
-  void CommonPartitionCheckImpl(const GHistIndexMatrix& gmat,
+  void CommonPartitionCheck(const GHistIndexMatrix& gmat,
                                 const ColumnMatrix& column_matrix,
                                 const RegTree& tree) {
     OptPartitionBuilder opt_partition_builder;
@@ -96,9 +76,8 @@ using DMatrixP = std::shared_ptr<DMatrix>;
     constexpr bool all_dense = true;
     constexpr bool has_cat = false;
 
-    opt_partition_builder.template Init<BinType>(gmat, column_matrix, &tree,
-                                                 thread_count, max_depth, is_loss_guide);
-    const BinType* data = reinterpret_cast<const BinType*>(column_matrix.GetIndexData());
+    opt_partition_builder.Init(gmat, column_matrix, &tree,
+                               thread_count, max_depth, is_loss_guide);
     const size_t fid = 0;
     const size_t split = 0;
     std::unordered_map<uint32_t, int32_t> split_conditions;
@@ -115,8 +94,8 @@ using DMatrixP = std::shared_ptr<DMatrix>;
     const size_t thread_id = 0;
     const size_t row_ind_begin = 0;
     const size_t row_ind_end = row_count_;
-    opt_partition_builder.template CommonPartition<
-    BinType, is_loss_guide, all_dense, has_cat>(thread_id, row_ind_begin, row_count_, data,
+    opt_partition_builder.template CommonPartition<is_loss_guide, all_dense, has_cat>(thread_id,
+                row_ind_begin, row_count_,
                 node_ids.data(),
                 &split_conditions,
                 &split_ind,
