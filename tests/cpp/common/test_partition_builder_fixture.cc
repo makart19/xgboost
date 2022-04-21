@@ -13,7 +13,7 @@ namespace xgboost {
 namespace common {
 
 class OptPartitionBuilderTestFixture :
-                public testing::TestWithParam<std::tuple<size_t, size_t, int32_t>> {
+                public testing::TestWithParam<std::tuple<size_t, size_t, int32_t, double>> {
 using DMatrixP = std::shared_ptr<DMatrix>;
 
  public:
@@ -22,6 +22,7 @@ using DMatrixP = std::shared_ptr<DMatrix>;
     row_count_ = std::get<0>(param);
     column_count_ = std::get<1>(param);
     max_bin_count_ = std::get<2>(param);
+    sparse_threshold_ = std::get<3>(param);
   }
 
   DMatrixP GenDMatrix(std::uint64_t seed) {
@@ -36,7 +37,7 @@ using DMatrixP = std::shared_ptr<DMatrix>;
 
   ColumnMatrix GetColumnMatrix(const GHistIndexMatrix& gmat) const {
     ColumnMatrix column_matrix;
-    column_matrix.Init(gmat, 0, 1);
+    column_matrix.Init(gmat, sparse_threshold_, 1);
 
     return std::move(column_matrix);
   }
@@ -45,7 +46,7 @@ using DMatrixP = std::shared_ptr<DMatrix>;
                             const ColumnMatrix& column_matrix,
                             const RegTree& tree) {
     switch (column_matrix.GetTypeSize()) {
-    case kUint8BinsTypeSize:
+        case kUint8BinsTypeSize:
           CommonPartitionCheckImpl<typename BinTypeMap<kUint8BinsTypeSize>::type>(gmat,
                                                                     column_matrix, tree);
           break;
@@ -56,7 +57,7 @@ using DMatrixP = std::shared_ptr<DMatrix>;
         default:
           CommonPartitionCheckImpl<typename BinTypeMap<kUint32BinsTypeSize>::type>(gmat,
                                                                     column_matrix, tree);
-      }
+    }
   }
 
   std::tuple<size_t, size_t> GetRef(const GHistIndexMatrix& gmat, size_t split_bin_id) {
@@ -88,8 +89,15 @@ using DMatrixP = std::shared_ptr<DMatrix>;
                                 const RegTree& tree) {
     OptPartitionBuilder opt_partition_builder;
 
+    constexpr size_t max_depth = 3;
+    constexpr size_t depth = 1;
+    constexpr size_t thread_count = 1;
+    constexpr bool is_loss_guide = false;
+    constexpr bool all_dense = true;
+    constexpr bool has_cat = false;
+
     opt_partition_builder.template Init<BinType>(gmat, column_matrix, &tree,
-    1, 3, false);
+                                                 thread_count, max_depth, is_loss_guide);
     const BinType* data = reinterpret_cast<const BinType*>(column_matrix.GetIndexData());
     const size_t fid = 0;
     const size_t split = 0;
@@ -101,22 +109,25 @@ using DMatrixP = std::shared_ptr<DMatrix>;
     std::unordered_map<uint32_t, uint16_t> nodes;  // (1, 0);
     std::vector<uint32_t> split_nodes(1, 0);
     auto pred = [&](auto ridx, auto bin_id, auto nid, auto split_cond) {
-    return false;
+      return false;
     };
 
+    const size_t thread_id = 0;
+    const size_t row_ind_begin = 0;
+    const size_t row_ind_end = row_count_;
     opt_partition_builder.template CommonPartition<
-    BinType, false, true, false>(0, 0, row_count_, data,
+    BinType, is_loss_guide, all_dense, has_cat>(thread_id, row_ind_begin, row_count_, data,
                 node_ids.data(),
                 &split_conditions,
                 &split_ind,
                 &smalest_nodes_mask,  // row_gpairs,
-                column_matrix, split_nodes, pred, 1);
+                column_matrix, split_nodes, pred, depth);
     opt_partition_builder.UpdateRowBuffer(node_ids,
                       gmat, gmat.cut.Ptrs().size() - 1,
                       0, node_ids, false);
     size_t split_bin_id = 0;
     auto [left_cnt, right_cnt] = GetRef(gmat, split_bin_id);
-      ASSERT_EQ(opt_partition_builder.summ_size, left_cnt);
+    ASSERT_EQ(opt_partition_builder.summ_size, left_cnt);
     ASSERT_EQ(row_count_ - opt_partition_builder.summ_size, right_cnt);
   }
 
@@ -124,6 +135,7 @@ using DMatrixP = std::shared_ptr<DMatrix>;
   size_t row_count_;
   size_t column_count_;
   int32_t max_bin_count_;
+  double sparse_threshold_;
 };
 
 TEST_P(OptPartitionBuilderTestFixture, TestCommonPartitionCheck) {
@@ -141,9 +153,10 @@ TEST_P(OptPartitionBuilderTestFixture, TestCommonPartitionCheck) {
 INSTANTIATE_TEST_CASE_P(
     OptPartitionBuilderValueParametrized,
     OptPartitionBuilderTestFixture,
-    testing::Combine(testing::Values(8),
-                     testing::Values(16),
-                     testing::Values(4, 512)));
+    testing::Combine(testing::Values(8),  // row count
+                     testing::Values(16),  // column count
+                     testing::Values(4, 512),  // max bin count
+                     testing::Values(0, 0.5)));  // sparse threshold
 
 }  // namespace common
 }  // namespace xgboost
