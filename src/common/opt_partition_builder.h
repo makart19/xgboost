@@ -42,15 +42,15 @@ class OptPartitionBuilder {
   std::vector<Slice> partitions;
   std::vector<std::vector<uint32_t>> vec_rows;
   std::vector<std::vector<uint32_t>> vec_rows_remain;
-  std::vector<std::shared_ptr<const Column<uint8_t> >> columns8;
-  std::vector<const DenseColumn<uint8_t, true>*> dcolumns8;
-  std::vector<const SparseColumn<uint8_t>*> scolumns8;
-  std::vector<std::shared_ptr<const Column<uint16_t> >> columns16;
-  std::vector<const DenseColumn<uint16_t, true>*> dcolumns16;
-  std::vector<const SparseColumn<uint16_t>*> scolumns16;
-  std::vector<std::shared_ptr<const Column<uint32_t> >> columns32;
-  std::vector<const DenseColumn<uint32_t, true>*> dcolumns32;
-  std::vector<const SparseColumn<uint32_t>*> scolumns32;
+  //std::vector<std::shared_ptr<const Column<uint8_t> >> columns8;
+  //std::vector<const DenseColumn<uint8_t, true>*> dcolumns8;
+  //std::vector<const SparseColumn<uint8_t>*> scolumns8;
+  //std::vector<std::shared_ptr<const Column<uint16_t> >> columns16;
+  //std::vector<const DenseColumn<uint16_t, true>*> dcolumns16;
+  //std::vector<const SparseColumn<uint16_t>*> scolumns16;
+  //std::vector<std::shared_ptr<const Column<uint32_t> >> columns32;
+  //std::vector<const DenseColumn<uint32_t, true>*> dcolumns32;
+  //std::vector<const SparseColumn<uint32_t>*> scolumns32;
   std::vector<std::unordered_map<uint32_t, size_t> > states;
   const RegTree* p_tree;
   // can be common for all threads!
@@ -65,59 +65,59 @@ class OptPartitionBuilder {
   uint32_t summ_size_remain = 0;
   uint32_t max_depth = 0;
 
-  template<typename BinIdxType>
-  std::vector<std::shared_ptr<const Column<BinIdxType> >>& GetColumnsRef() {
-    const BinIdxType dummy = 0;
-    return GetColumnsRefImpl(&dummy);
-  }
+  //template<typename BinIdxType>
+  //std::vector<std::shared_ptr<const Column<BinIdxType> >>& GetColumnsRef() {
+  //  const BinIdxType dummy = 0;
+  //  return GetColumnsRefImpl(&dummy);
+  //}
 
-  std::vector<std::shared_ptr<const Column<uint8_t> >>& GetColumnsRefImpl(const uint8_t* dummy) {
-      return columns8;
-  }
+  //std::vector<std::shared_ptr<const Column<uint8_t> >>& GetColumnsRefImpl(const uint8_t* dummy) {
+  //    return columns8;
+  //}
 
-  std::vector<std::shared_ptr<const Column<uint16_t> >>& GetColumnsRefImpl(const uint16_t* dummy) {
-      return columns16;
-  }
+  //std::vector<std::shared_ptr<const Column<uint16_t> >>& GetColumnsRefImpl(const uint16_t* dummy) {
+  //    return columns16;
+  //}
 
-  std::vector<std::shared_ptr<const Column<uint32_t> >>& GetColumnsRefImpl(const uint32_t* dummy) {
-      return columns32;
-  }
+  //std::vector<std::shared_ptr<const Column<uint32_t> >>& GetColumnsRefImpl(const uint32_t* dummy) {
+  //    return columns32;
+  //}
 
-  template<typename BinIdxType>
-  std::vector<const DenseColumn<BinIdxType, true>*>& GetDenseColumnsRef() {
-    const BinIdxType dummy = 0;
-    return GetDenseColumnsRefImpl(&dummy);
-  }
+  //template<typename BinIdxType>
+  //std::vector<const DenseColumn<BinIdxType, true>*>& GetDenseColumnsRef() {
+  //  const BinIdxType dummy = 0;
+  //  return GetDenseColumnsRefImpl(&dummy);
+  //}
 
-  std::vector<const DenseColumn<uint8_t, true>*>& GetDenseColumnsRefImpl(const uint8_t* dummy) {
-      return dcolumns8;
-  }
+  //std::vector<const DenseColumn<uint8_t, true>*>& GetDenseColumnsRefImpl(const uint8_t* dummy) {
+  //    return dcolumns8;
+  //}
 
-  std::vector<const DenseColumn<uint16_t, true>*>& GetDenseColumnsRefImpl(const uint16_t* dummy) {
-      return dcolumns16;
-  }
+  //std::vector<const DenseColumn<uint16_t, true>*>& GetDenseColumnsRefImpl(const uint16_t* dummy) {
+  //    return dcolumns16;
+  //}
 
-  std::vector<const DenseColumn<uint32_t, true>*>& GetDenseColumnsRefImpl(const uint32_t* dummy) {
-      return dcolumns32;
-  }
+  //std::vector<const DenseColumn<uint32_t, true>*>& GetDenseColumnsRefImpl(const uint32_t* dummy) {
+  //    return dcolumns32;
+  //}
 
-  template<typename BinIdxType>
-  std::vector<const SparseColumn<BinIdxType>*>& GetSparseColumnsRef() {
-    const BinIdxType dummy = 0;
-    return GetSparseColumnsRefImpl(&dummy);
-  }
+  //template<typename BinIdxType>
+  //std::vector<const SparseColumn<BinIdxType>*>& GetSparseColumnsRef() {
+  //  const BinIdxType dummy = 0;
+  //  return GetSparseColumnsRefImpl(&dummy);
+  //}
 
-  std::vector<const SparseColumn<uint8_t>*>& GetSparseColumnsRefImpl(const uint8_t* dummy) {
-      return scolumns8;
-  }
+  //std::vector<const SparseColumn<uint8_t>*>& GetSparseColumnsRefImpl(const uint8_t* dummy) {
+  //    return scolumns8;
+  //}
 
-  std::vector<const SparseColumn<uint16_t>*>& GetSparseColumnsRefImpl(const uint16_t* dummy) {
-      return scolumns16;
-  }
+  //std::vector<const SparseColumn<uint16_t>*>& GetSparseColumnsRefImpl(const uint16_t* dummy) {
+  //    return scolumns16;
+  //}
 
-  std::vector<const SparseColumn<uint32_t>*>& GetSparseColumnsRefImpl(const uint32_t* dummy) {
-      return scolumns32;
-  }
+  //std::vector<const SparseColumn<uint32_t>*>& GetSparseColumnsRefImpl(const uint32_t* dummy) {
+  //    return scolumns32;
+  //}
 
   const std::vector<Slice> &GetSlices(const uint32_t tid) const {
     return threads_addr[tid];
@@ -141,16 +141,16 @@ class OptPartitionBuilder {
             bool is_lossguide) {
     switch (column_matrix.GetTypeSize()) {
       case common::kUint8BinsTypeSize:
-        Init<uint8_t>(gmat, column_matrix, p_tree_local, nthreads, max_depth,
-            is_lossguide);
+        Init<BinTypeMap<kUint8BinsTypeSize>::type>(gmat, column_matrix, 
+            p_tree_local, nthreads, max_depth, is_lossguide);
         break;
       case common::kUint16BinsTypeSize:
-        Init<uint16_t>(gmat, column_matrix, p_tree_local, nthreads, max_depth,
-            is_lossguide);
+        Init<BinTypeMap<kUint16BinsTypeSize>::type>(gmat, column_matrix,
+            p_tree_local, nthreads, max_depth, is_lossguide);
         break;
       default:
-        Init<uint32_t>(gmat, column_matrix, p_tree_local, nthreads, max_depth,
-            is_lossguide);
+        Init<BinTypeMap<kUint32BinsTypeSize>::type>(gmat, column_matrix,
+            p_tree_local, nthreads, max_depth, is_lossguide);
         break;
     }
   }
@@ -169,17 +169,6 @@ class OptPartitionBuilder {
       default_flags.clear();
       states.resize(nthreads);
       default_flags.resize(nthreads);
-      GetColumnsRef<BinIdxType>().resize(column_matrix.GetNumFeature());
-      GetDenseColumnsRef<BinIdxType>().resize(column_matrix.GetNumFeature());
-      GetSparseColumnsRef<BinIdxType>().resize(column_matrix.GetNumFeature());
-      for (size_t fid = 0; fid < column_matrix.GetNumFeature(); ++fid) {
-        GetColumnsRef<BinIdxType>()[fid] =
-          std::move(column_matrix.GetColumn<BinIdxType, true>(fid));
-        GetDenseColumnsRef<BinIdxType>()[fid] = dynamic_cast<const DenseColumn<BinIdxType, true>*>(
-                                                GetColumnsRef<BinIdxType>()[fid].get());
-        GetSparseColumnsRef<BinIdxType>()[fid] =
-          dynamic_cast<const SparseColumn<BinIdxType>*>(GetColumnsRef<BinIdxType>()[fid].get());
-      }
     }
     data_hash = reinterpret_cast<const uint8_t*>(column_matrix.GetIndexData());
     n_threads = nthreads;
@@ -223,6 +212,7 @@ class OptPartitionBuilder {
                        const std::vector<uint32_t>& split_nodes, Predicate&& pred, size_t depth) {
     switch (column_matrix.GetTypeSize()) {
       case common::kUint8BinsTypeSize:
+ //TODO replace with using Init<BinTypeMap<kUint16BinsTypeSize>>>(gmat, column_matrix,
         CommonPartition<uint8_t, is_loss_guided, all_dense, any_cat>(tid,
                            row_indices_begin, row_indices_end,
                            column_matrix.template GetIndexData<uint8_t>(),
@@ -255,10 +245,8 @@ class OptPartitionBuilder {
                        std::unordered_map<uint32_t, bool>* smalest_nodes_mask,
                        const ColumnMatrix& column_matrix,
                        const std::vector<uint32_t>& split_nodes, Predicate&& pred, size_t depth) {
-    std::vector<std::shared_ptr<
-                const Column<BinIdxType> > >& columns = GetColumnsRef<BinIdxType>();
-    const auto& dense_columns = GetDenseColumnsRef<BinIdxType>();
-    const auto& sparse_columns = GetSparseColumnsRef<BinIdxType>();
+    const auto& column_list = column_matrix.GetColumnViewList();
+
     uint32_t rows_count = 0;
     uint32_t rows_left_count = 0;
     uint32_t* rows = vec_rows[tid].data();
@@ -274,11 +262,7 @@ class OptPartitionBuilder {
       const uint32_t first_row_id = !is_loss_guided ? row_indices_begin :
                                                       row_indices_ptr[row_indices_begin];
       for (const auto& nid : split_nodes) {
-        if (columns[split_ind_data[nid]]->GetType() == common::kDenseColumn) {
-          states[tid][nid] = dense_columns[split_ind_data[nid]]->GetInitialState(first_row_id);
-        } else {
-          states[tid][nid] = sparse_columns[split_ind_data[nid]]->GetInitialState(first_row_id);
-        }
+        states[tid][nid] = column_list[split_ind_data[nid]]->GetInitialState(first_row_id);
         default_flags[tid][nid] = (*p_tree)[nid].DefaultLeft();
       }
     }
@@ -301,20 +285,13 @@ class OptPartitionBuilder {
         const int32_t cmp_value = static_cast<int32_t>(columnar_data[si + i]);
         nodes_ids[i] = cmp_value <= sc ? (*p_tree)[nid].LeftChild() : (*p_tree)[nid].RightChild();
       } else {
-        int32_t cmp_value = 0;
         uint64_t si = split_ind_data.find(nid) != split_ind_data.end() ? split_ind_data[nid] : 0;
-        if (columns[si]->GetType() == common::kDenseColumn) {
-          cmp_value = dense_columns[si]->GetBinIdx(i, nullptr);
-        } else {
-          cmp_value = sparse_columns[si]->GetBinIdx(i, &(states[tid][nid]));
-        }
-        if (cmp_value == Column<BinIdxType>::kMissingId) {
-          const bool default_left = default_flags[tid][nid];
-          if (default_left) {
-            nodes_ids[i] = (*p_tree)[nid].LeftChild();
-          } else {
-            nodes_ids[i] = (*p_tree)[nid].RightChild();
-          }
+        int32_t cmp_value = static_cast<int32_t>(
+                               column_list[si]->template GetBinIdx<BinIdxType>(i, &(states[tid][nid])));
+        if (cmp_value == Column::kMissingId) {
+          nodes_ids[i] = default_flags[tid][nid]
+                         ? (*p_tree)[nid].LeftChild()
+                         : (*p_tree)[nid].RightChild();
         } else {
           nodes_ids[i] = cmp_value <= sc ? (*p_tree)[nid].LeftChild() :
                          (*p_tree)[nid].RightChild();
@@ -348,10 +325,8 @@ class OptPartitionBuilder {
                        std::vector<bool>* smalest_nodes_mask,
                        const ColumnMatrix& column_matrix,
                        const std::vector<uint32_t>& split_nodes, Predicate&& pred, size_t depth) {
-    std::vector<std::shared_ptr<
-                const Column<BinIdxType> > >& columns = GetColumnsRef<BinIdxType>();
-    const auto& dense_columns = GetDenseColumnsRef<BinIdxType>();
-    const auto& sparse_columns = GetSparseColumnsRef<BinIdxType>();
+    const auto& column_list = column_matrix.GetColumnViewList();
+
     uint32_t rows_count = 0;
     uint32_t rows_left_count = 0;
     uint32_t* rows = vec_rows[tid].data();
@@ -374,11 +349,7 @@ class OptPartitionBuilder {
       const uint32_t first_row_id = !is_loss_guided ? row_indices_begin :
                                                       row_indices_ptr[row_indices_begin];
       for (const auto& nid : split_nodes) {
-        if (columns[split_ind_data[nid]]->GetType() == common::kDenseColumn) {
-          states[tid][nid] = dense_columns[split_ind_data[nid]]->GetInitialState(first_row_id);
-        } else {
-          states[tid][nid] = sparse_columns[split_ind_data[nid]]->GetInitialState(first_row_id);
-        }
+        states[tid][nid] = column_list[split_ind_data[nid]]->GetInitialState(first_row_id);
         default_flags[tid][nid] = (*p_tree)[nid].DefaultLeft();
       }
     }
@@ -398,25 +369,18 @@ class OptPartitionBuilder {
         const int32_t cmp_value = static_cast<int32_t>(columnar_data[split_ind_data[nid] + i]);
         nodes_ids[i] = cmp_value <= sc ? (*p_tree)[nid].LeftChild() : (*p_tree)[nid].RightChild();
       } else {
-        int32_t cmp_value = 0;
         uint64_t si = split_ind_data[nid];
-        if (columns[si]->GetType() == common::kDenseColumn) {
-          cmp_value = dense_columns[si]->GetBinIdx(i, nullptr);
-        } else {
-          cmp_value = sparse_columns[si]->GetBinIdx(i, &(states[tid][nid]));
-        }
-        if (cmp_value == Column<BinIdxType>::kMissingId) {
-          const bool default_left = default_flags[tid][nid];
-          if (default_left) {
-            nodes_ids[i] = (*p_tree)[nid].LeftChild();
-          } else {
-            nodes_ids[i] = (*p_tree)[nid].RightChild();
-          }
+        int32_t cmp_value = static_cast<int32_t>(
+                               column_list[si]->template GetBinIdx<BinIdxType>(i, &(states[tid][nid])));
+        if (cmp_value == Column::kMissingId) {
+          nodes_ids[i] = default_flags[tid][nid]
+                         ? (*p_tree)[nid].LeftChild()
+                         : (*p_tree)[nid].RightChild();
         } else {
           nodes_ids[i] = cmp_value <= sc ? (*p_tree)[nid].LeftChild() : (*p_tree)[nid].RightChild();
         }
       }
-      const uint16_t check_node_id = /*(~(static_cast<uint16_t>(1) << 15)) & */ nodes_ids[i];
+      const uint16_t check_node_id = nodes_ids[i];
       uint32_t inc = static_cast<uint32_t>(smalest_nodes_mask_ref[check_node_id]);
       rows[1 + rows_count] = i;
       rows_count += inc;
@@ -453,6 +417,7 @@ class OptPartitionBuilder {
       return gmat.row_ptr.size() - 1;
     }
   }
+
   size_t DepthBegin(const std::vector<uint16_t>& compleate_trees_depth_wise,
                     bool is_lossguided) {
     if (is_lossguided) {
