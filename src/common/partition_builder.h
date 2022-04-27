@@ -66,7 +66,8 @@ class PartitionBuilder {
 
     for (size_t i = 0; i < n_samples; ++i) {
       auto rid = p_row_indices[i];
-      const int32_t bin_id = static_cast<int32_t>(column.template GetBinIdx<BinIdxType>(rid - base_rowid, &state));
+      const int32_t bin_id = static_cast<int32_t>(
+                        column.template GetBinIdx<BinIdxType>(rid - base_rowid, &state));
       if (bin_id == ColumnType::kMissingId) {
         if (default_left) {
           p_left_part[nleft_elems++] = rid;
@@ -114,7 +115,7 @@ class PartitionBuilder {
     const bst_uint fid = tree[nid].SplitIndex();
     const bool default_left = tree[nid].DefaultLeft();
     const auto& column_ptr = column_matrix.GetColumnViewList()[fid];
-    
+
     bool is_cat = tree.GetSplitTypes()[nid] == FeatureType::kCategorical;
     auto node_cats = tree.NodeCats(nid);
 
@@ -147,10 +148,12 @@ std::cout << "Partition kernel! 5" << std::endl;
 
     std::pair<size_t, size_t> child_nodes_sizes;
     if (default_left) {
-      child_nodes_sizes = PartitionKernel<BinIdxType, true>(*column_ptr.get(), rid_span, left, right,
+      child_nodes_sizes = PartitionKernel<BinIdxType, true>(*column_ptr.get(),
+                                                             rid_span, left, right,
                                                              gmat.base_rowid, pred);
     } else {
-      child_nodes_sizes = PartitionKernel<BinIdxType, false>(*column_ptr.get(), rid_span, left, right,
+      child_nodes_sizes = PartitionKernel<BinIdxType, false>(*column_ptr.get(),
+                                                              rid_span, left, right,
                                                               gmat.base_rowid, pred);
     }
 
