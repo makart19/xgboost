@@ -476,7 +476,7 @@ class ColumnMatrix {
   }
 
   template <typename ColumnType, typename ... Args>
-  void AddColumnToList(Args&& ... args) {
+  void AddColumnToList(size_t fid, Args&& ... args) {
         auto clmn = std::make_shared<const ColumnType>(std::forward<Args>(args) ...);
         column_list_[fid] = clmn;
         column_view_list_[fid] = std::make_shared<const ColumnView>(clmn.get());
@@ -494,11 +494,11 @@ class ColumnMatrix {
                                                    column_size * bin_type_size_ };
 
       if (type_[fid] == ColumnType::kDenseColumn) {
-        AddColumnToList<DenseColumn>(GetTypeSize(), bin_index,
+        AddColumnToList<DenseColumn>(fid, GetTypeSize(), bin_index,
                               index_base_[fid],
                               any_missing_, missing_flags_, feature_offset);
       } else {
-        AddColumnToList<SparseColumn>(GetTypeSize(), bin_index,
+        AddColumnToList<SparseColumn>(fid, GetTypeSize(), bin_index,
                               index_base_[fid],
                               common::Span<const size_t>(&row_ind_[feature_offset], column_size));
       }
