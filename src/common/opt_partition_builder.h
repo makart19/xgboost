@@ -222,8 +222,9 @@ class OptPartitionBuilder {
         nodes_ids[i] = cmp_value <= sc ? (*p_tree)[nid].LeftChild() : (*p_tree)[nid].RightChild();
       } else {
         uint64_t si = split_ind_data.find(nid) != split_ind_data.end() ? split_ind_data[nid] : 0;
-        int32_t cmp_value = static_cast<int32_t>(
-                         column_list[si]->template GetBinIdx<BinIdxType>(i, &(states[tid][nid])));
+        int32_t cmp_value = column_list[si]->template GetBinIdx<BinIdxType, int32_t>(i,
+                                                                        &(states[tid][nid]));
+
         if (cmp_value == Column::kMissingId) {
           nodes_ids[i] = default_flags[tid][nid]
                          ? (*p_tree)[nid].LeftChild()
@@ -306,8 +307,8 @@ class OptPartitionBuilder {
         nodes_ids[i] = cmp_value <= sc ? (*p_tree)[nid].LeftChild() : (*p_tree)[nid].RightChild();
       } else {
         uint64_t si = split_ind_data[nid];
-        int32_t cmp_value = static_cast<int32_t>(
-                         column_list[si]->template GetBinIdx<BinIdxType>(i, &(states[tid][nid])));
+        int32_t cmp_value = column_list[si]->template GetBinIdx<BinIdxType, int32_t>(i,
+                                                                        &(states[tid][nid]));
         if (cmp_value == Column::kMissingId) {
           nodes_ids[i] = default_flags[tid][nid]
                          ? (*p_tree)[nid].LeftChild()
